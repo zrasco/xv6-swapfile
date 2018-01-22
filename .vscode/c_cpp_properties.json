@@ -1,0 +1,12 @@
+{
+    "configurations": [
+        {
+            "name": "xv6",
+            "intelliSenseMode": "msvc-x64",
+            "includePath": [
+                "${workspaceRoot}"
+            ]
+        }
+    ],
+    "version": 3
+}

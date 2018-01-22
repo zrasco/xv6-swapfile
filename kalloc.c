@@ -8,6 +8,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "spinlock.h"
+#include "stat.h"
 
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
@@ -21,7 +22,22 @@ struct {
   struct spinlock lock;
   int use_lock;
   struct run *freelist;
+
+  uint allocated_pages;                     // # of pages not on freelist
+  uint free_pages;                          // # of pages on freelist
+  uint kernel_data_boundary;
+  uint max_proc_size;
 } kmem;
+
+struct {
+  struct spinlock lock;
+  int use_lock;
+  struct run *freelist;
+
+  // Set during kinit2. Equal to (Size of swapfile / page size)
+  unsigned int total_pages;
+
+} kswapmem;
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -33,6 +49,7 @@ kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
   kmem.use_lock = 0;
+  kmem.kernel_data_boundary = PGROUNDUP((uint)vstart);
   freerange(vstart, vend);
 }
 
@@ -40,6 +57,15 @@ void
 kinit2(void *vstart, void *vend)
 {
   freerange(vstart, vend);
+  kmem.allocated_pages = 0;
+  kmem.free_pages = kfreepagecnt();
+  kswapmem.total_pages = swap_page_count();
+
+  // Set maximum process size. Do not allow sbrk() to exceed this
+  kmem.max_proc_size = (kswapmem.total_pages + kmem.free_pages) * PGSIZE;
+
+  cprintf("Max process memory size set to %dKB\n",kmem.max_proc_size / 1024);
+
   kmem.use_lock = 1;
 }
 
@@ -47,9 +73,19 @@ void
 freerange(void *vstart, void *vend)
 {
   char *p;
+
+  cprintf("Free pages before: %d\n",kfreepagecnt());
+
   p = (char*)PGROUNDUP((uint)vstart);
+  
+  cprintf("Calling freerange. vstart=0x%p(0x%p) [rounded to 0x%p], vend=0x%p(0x%p)\n",
+    vstart,V2P(vstart),p,vend,V2P(vend));
+
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
     kfree(p);
+
+  cprintf("Free pages after: %d\n",kfreepagecnt());
+
 }
 
 //PAGEBREAK: 21
@@ -73,6 +109,8 @@ kfree(char *v)
   r = (struct run*)v;
   r->next = kmem.freelist;
   kmem.freelist = r;
+  kmem.allocated_pages--;
+  kmem.free_pages++;
   if(kmem.use_lock)
     release(&kmem.lock);
 }
@@ -89,9 +127,69 @@ kalloc(void)
     acquire(&kmem.lock);
   r = kmem.freelist;
   if(r)
+  {
     kmem.freelist = r->next;
+    kmem.allocated_pages++;
+    kmem.free_pages--;
+  }
+
   if(kmem.use_lock)
     release(&kmem.lock);
   return (char*)r;
 }
 
+inline uint kmaxprocsize()
+// No process can grow beyond this size
+// Equal to (# physical + # swap pages) * PGSIZE
+{
+  return kmem.max_proc_size;
+}
+
+inline int kexistfreepages()
+// Quick function to check for free kernel pages. Used in sbrk()
+// Returns 1 if freelist has entries, 0 if not
+{
+  return (kmem.freelist != NULL);
+}
+
+unsigned int kfreepagecnt()
+{
+  unsigned int retval = 0;
+  struct run *r;
+
+  // Get the number of nodes on kmem.freelist (# of physical pages)
+  if (kmem.use_lock)
+    acquire(&kmem.lock);
+  r = kmem.freelist;
+
+  while (r)
+  {
+    retval++;
+    r = r->next;
+  }
+
+  if(kmem.use_lock)
+    release(&kmem.lock);
+
+  return retval;
+}
+
+inline unsigned int kfreepagecnt1()
+{
+  return kmem.free_pages;
+}
+
+inline uint kallocatedpages()
+{
+  return kmem.allocated_pages;
+}
+
+inline uint kallocbeginning()
+{
+  return kmem.kernel_data_boundary;
+}
+
+inline struct run *kgetfreelistptr()
+{
+  return kmem.freelist;
+}

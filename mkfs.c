@@ -73,7 +73,6 @@ main(int argc, char *argv[])
   char buf[BSIZE];
   struct dinode din;
 
-
   static_assert(sizeof(int) == 4, "Integers must be 4 bytes!");
 
   if(argc < 2){
@@ -151,6 +150,56 @@ main(int argc, char *argv[])
 
     while((cc = read(fd, buf, sizeof(buf))) > 0)
       iappend(inum, buf, cc);
+
+      /*
+    if (i == 2)
+    {
+      
+      uint indirect[NINDIRECT];
+      uint dindirectindex[NDINDIRECT_ENTRY];
+      uint dindirectdata[NDINDIRECT_PER_ENTRY];
+      struct dinode din;
+      rinode(inum, &din);
+      printf("Done writing %s\n",argv[i]);
+
+      
+      // Print block table
+      for (int x = 0; x < NDIRECT+2; x++)
+      {
+        printf("din.addr[%d]==%x\n",x,din.addrs[x]);
+
+        if (x == NDIRECT)
+        {
+          // Indrect table read in
+          rsect(din.addrs[x],(char*)indirect);
+
+          for (int x1 = 0; x1 < NINDIRECT; x1++)
+            printf("din.addr[%d][%d] aka indirect[%d]==%x\n",x,x1,x1,indirect[x1]);
+        }
+        else if (x == NDIRECT + 1)
+        {
+          dindirectdata[0] = dindirectdata[0];
+          rsect(din.addrs[x],(char*)dindirectindex);
+          
+          for (int x1 = 0; x1 < NDINDIRECT_ENTRY; x1++)
+          {
+              printf("din.addr[%d][%d] aka dindirectindex[%d]==%x\n",x,x1,x1,dindirectindex[x1]);
+
+              rsect(dindirectindex[x1],(char*)dindirectdata);
+
+              for (int x2 = 0; x2 < NDINDIRECT_PER_ENTRY; x2++)
+              {
+                printf("din.addr[%d][%d][%d] aka dindirectdata[%d]==%x\n",x,x1,x2,x2,dindirectdata[x2]);
+              }
+          }
+
+          //  printf("din.addr[%d][%d] aka dindirectindex[%d]==%x\n",x,)
+        }
+        
+      }
+      
+    }
+    */
 
     close(fd);
   }
@@ -234,6 +283,7 @@ ialloc(ushort type)
   return inum;
 }
 
+/*
 void
 balloc(int used)
 {
@@ -249,9 +299,131 @@ balloc(int used)
   printf("balloc: write bitmap block at sector %d\n", sb.bmapstart);
   wsect(sb.bmapstart, buf);
 }
+*/
+
+void
+balloc(int used)
+{
+  uchar buf[BSIZE];
+  int i;
+  int bitmapblocks = (used / (BSIZE*8)) + 1;
+
+  printf("balloc: first %d blocks have been allocated\n", used);
+  printf("balloc: writing %d bitmap blocks\n", bitmapblocks);
+
+  //assert(used < BSIZE*8);
+
+  for (int x = 0; x < bitmapblocks; x++)
+  {
+    int used_begin = x * (BSIZE * 8);
+    int used_end = (x + 1) * (BSIZE * 8);
+    //printf("used_begin==%d, used_end==%d\n",used_begin,used_end);
+
+    bzero(buf, BSIZE);
+    for(i = used_begin; i < used_end; i++){
+      int offset = (i - used_begin);
+      printf("offset==%d\n",offset);
+      buf[offset/8] = buf[offset/8] | (0x1 << (offset%8));
+      //buf[i/8] = buf[i/8] | (0x1 << (i%8));
+    }
+    printf("balloc: write bitmap block #%d at sector %d\n", x + 1, sb.bmapstart + x);
+    wsect((sb.bmapstart + x), buf);
+  }
+
+}
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
 
+void
+iappend(uint inum, void *xp, int n)
+{
+  char *p = (char*)xp;
+  uint fbn, off, n1;
+  struct dinode din;
+  char buf[BSIZE];
+  uint indirect[NINDIRECT];
+  uint dindirectindex[NDINDIRECT_ENTRY];
+  uint dindirectdata[NDINDIRECT_PER_ENTRY];
+  uint x;
+
+  rinode(inum, &din);
+  off = xint(din.size);
+  //printf("append inum %d at off %d sz %d\n", inum, off, n);
+  while(n > 0){
+    fbn = off / BSIZE;
+    assert(fbn < MAXFILE);
+    if (fbn < NDIRECT){
+      // For addresses 1 thru NDIRECT (11)
+      if(xint(din.addrs[fbn]) == 0){
+        din.addrs[fbn] = xint(freeblock++);
+      }
+      x = xint(din.addrs[fbn]);
+    }
+    else if ((fbn - NDIRECT) < NINDIRECT) {
+      int entry = fbn - NDIRECT;
+      // For addresses NDIRECT thru NINDIRECT (128)
+      if(xint(din.addrs[NDIRECT]) == 0){
+        din.addrs[NDIRECT] = xint(freeblock++);
+      }
+
+      rsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+
+      if(indirect[entry] == 0){
+        indirect[entry] = xint(freeblock++);
+        wsect(xint(din.addrs[NDIRECT]), (char*)indirect);
+      }
+      x = xint(indirect[entry]);
+    }
+    else if ((fbn - NDIRECT) < NDOUBLE_INDIRECT)
+    {
+      int efbn = fbn - NDIRECT;     // effective fbn
+      uint addr;
+      int entry = (efbn - NINDIRECT) / NDINDIRECT_PER_ENTRY;
+      int offset = (efbn - NINDIRECT) % NDINDIRECT_PER_ENTRY;
+
+      // Base address of doubly indirect index table
+      if(xint(din.addrs[NDIRECT + 1]) == 0){
+        din.addrs[NDIRECT + 1] = addr = xint(freeblock++);
+      }
+
+      entry =  entry;
+      offset = offset;
+      dindirectindex[0] = 5;
+
+      // Read the current index table into dindirectindex
+      rsect(xint(din.addrs[NDIRECT + 1]), (char*)dindirectindex);
+
+      if (dindirectindex[entry] == 0)
+      {
+        // Assign a block to this index entry
+        dindirectindex[entry] = xint(freeblock++);
+        wsect(xint(din.addrs[NDIRECT + 1]), (char*)dindirectindex);
+      }
+
+      // Read the current data block
+      rsect(xint(dindirectindex[entry]), (char*)dindirectdata);
+
+      if (dindirectdata[offset] == 0)
+      {
+        // Assign this data block
+        dindirectdata[offset] = xint(freeblock++);
+        wsect(xint(dindirectindex[entry]), (char*)dindirectdata);
+      }
+      
+      x = xint(dindirectdata[offset]);
+      }
+    n1 = min(n, (fbn + 1) * BSIZE - off);
+    rsect(x, buf);
+    bcopy(p, buf + off - (fbn * BSIZE), n1);
+    wsect(x, buf);
+    n -= n1;
+    off += n1;
+    p += n1;
+  }
+  din.size = xint(off);
+  winode(inum, &din);
+}
+/*
 void
 iappend(uint inum, void *xp, int n)
 {
@@ -264,7 +436,7 @@ iappend(uint inum, void *xp, int n)
 
   rinode(inum, &din);
   off = xint(din.size);
-  // printf("append inum %d at off %d sz %d\n", inum, off, n);
+  //printf("append inum %d at off %d sz %d\n", inum, off, n);
   while(n > 0){
     fbn = off / BSIZE;
     assert(fbn < MAXFILE);
@@ -273,7 +445,8 @@ iappend(uint inum, void *xp, int n)
         din.addrs[fbn] = xint(freeblock++);
       }
       x = xint(din.addrs[fbn]);
-    } else {
+    }
+    else {
       if(xint(din.addrs[NDIRECT]) == 0){
         din.addrs[NDIRECT] = xint(freeblock++);
       }
@@ -285,6 +458,7 @@ iappend(uint inum, void *xp, int n)
       x = xint(indirect[fbn-NDIRECT]);
     }
     n1 = min(n, (fbn + 1) * BSIZE - off);
+    //printf("entering rsect, x==%u\n",x);
     rsect(x, buf);
     bcopy(p, buf + off - (fbn * BSIZE), n1);
     wsect(x, buf);
@@ -295,3 +469,4 @@ iappend(uint inum, void *xp, int n)
   din.size = xint(off);
   winode(inum, &din);
 }
+*/

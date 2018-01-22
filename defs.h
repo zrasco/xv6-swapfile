@@ -9,6 +9,7 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct vminfo_struct;
 
 // bio.c
 void            binit(void);
@@ -68,6 +69,13 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+uint 			kmaxprocsize(void);
+int 			kexistfreepages(void);
+uint 		    kfreepagecnt(void);
+uint 			kfreepagecnt1(void);
+uint 			kallocatedpages(void);
+uint 			kallocbeginning(void);
+struct run 		*kgetfreelistptr(void);
 
 // kbd.c
 void            kbdintr(void);
@@ -120,6 +128,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+void			procsmemorystats(struct vminfo_struct*);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -185,6 +194,13 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+int				vminfo_internal(struct vminfo_struct*);
+int 			pgtabinfo_internal(void);
+
+// swap.c
+void            kswapinit(void);            
+void            kswapd(void);
+unsigned int 	swap_page_count(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

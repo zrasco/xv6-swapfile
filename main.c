@@ -32,6 +32,7 @@ main(void)
   fileinit();      // file table
   ideinit();       // disk 
   startothers();   // start other processors
+  kswapinit();     // swap space
   kinit2(P2V(4*1024*1024), P2V(PHYSTOP)); // must come after startothers()
   userinit();      // first user process
   mpmain();        // finish this processor's setup

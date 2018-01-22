@@ -97,8 +97,11 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  curproc->tf->eip = elf.entry;  // main
+  curproc->phys_sz = sz;          // Memory already mapped
+  curproc->page_fault_cnt = 0;    // Page fault count
+  curproc->tf->eip = elf.entry;   // main
   curproc->tf->esp = sp;
+  //cprintf("stack pointer: sp=0x%p\n",sp);
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;

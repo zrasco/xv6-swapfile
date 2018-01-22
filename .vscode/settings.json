@@ -1,0 +1,9 @@
+{
+    "files.associations": {
+        "param.h": "c",
+        "buf.h": "c",
+        "fs.h": "c",
+        "swap.h": "c",
+        "defs.h": "c"
+    }
+}

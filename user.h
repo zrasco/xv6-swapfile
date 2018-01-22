@@ -1,5 +1,7 @@
 struct stat;
 struct rtcdate;
+struct vminfo_struct;
+struct pagetabinfo_struct;
 
 // system calls
 int fork(void);
@@ -23,6 +25,10 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int vminfo(struct vminfo_struct*);
+int pgtabinfo(void);
+int readpos(int, uint, void*, int);
+int writepos(int, uint, void*, int);
 
 // ulib.c
 int stat(char*, struct stat*);

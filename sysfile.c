@@ -90,6 +90,44 @@ sys_write(void)
   return filewrite(f, p, n);
 }
 
+int sys_readpos(void)
+{
+  struct file *f;
+  uint old_offset;
+  int n, retval, o;
+  char *p;
+
+  if(argfd(0, 0, &f) < 0 || argint(3, &n) < 0 || argint(1,&o) || argptr(2, &p, n) < 0)
+    return -1;
+
+  /* Change file descriptor to offset specified */
+  old_offset = f->off;
+  f->off = (unsigned int)o;
+  retval = fileread(f,p,n);
+  f->off = old_offset;  
+
+  return retval;
+}
+
+int sys_writepos(void)
+{
+  struct file *f;
+  uint old_offset;
+  int n, retval, o;
+  char *p;
+
+  if(argfd(0, 0, &f) < 0 || argint(3, &n) < 0 || argint(1,&o) || argptr(2, &p, n) < 0)
+    return -1;
+
+  /* Change file descriptor to offset specified */
+  old_offset = f->off;
+  f->off = (unsigned int)o;
+  retval = filewrite(f,p,n);
+  f->off = old_offset;  
+
+  return retval;
+}
+
 int
 sys_close(void)
 {

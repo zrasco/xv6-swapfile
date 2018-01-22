@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "swap.h"
 
 struct {
   struct spinlock lock;
@@ -324,8 +325,11 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  struct swap_info_struct kswapinfo;
   c->proc = 0;
   
+  initlock(&kswapinfo.sdev_lock, "kswapd");
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
@@ -340,6 +344,7 @@ scheduler(void)
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
       c->proc = p;
+      //cprintf("in scheduler: switchuvm being called for process %s\n",p->name);
       switchuvm(p);
       p->state = RUNNING;
 
@@ -351,8 +356,14 @@ scheduler(void)
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
+
+    // Hard-code the kswapd() daemon thread for simpilicity's sake
+    // In an actual OS, seperate kernel threads would be ran here
+    
+    //acquire(&kswapinfo.sdev_lock);
+    //kswapd();
+    //release(&kswapinfo.sdev_lock);  
 }
 
 // Enter scheduler.  Must hold only ptable.lock
@@ -531,4 +542,39 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+void procsmemorystats(struct vminfo_struct *vminfo_container)
+// UNSAFE, supports 10 max
+// TODO: MAKE SAFE
+// Returns # of processes total
+{
+  int index = 0;
+  struct proc *p;
+
+  acquire(&ptable.lock);
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if (p->state == UNUSED)
+      continue;
+
+    //names[index][0] = p->name[0];
+    //names[index][1] = 0;
+
+    //memmove(names[index],p->name,sizeof(p->name));
+    //names[index] = p->name;
+
+    //strcpy(names[index],p->name);
+    memmove(vminfo_container->proclist[index],p->name,16);
+    vminfo_container->procsizes[index] = PGROUNDUP(p->sz);
+    vminfo_container->procphyssizes[index] = p->phys_sz;
+    vminfo_container->procpagefaultcnts[index] = p->page_fault_cnt;
+    vminfo_container->proc_count++;
+
+    index++;
+
+    if (index >= 10)
+      break;
+  }
+  release(&ptable.lock);
 }

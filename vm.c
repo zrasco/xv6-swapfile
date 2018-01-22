@@ -32,7 +32,7 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -44,6 +44,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
   } else {
     if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
       return 0;
+    //cprintf("walkpgdir(): pgtab created at 0x%p\n",pgtab);
     // Make sure all those PTE_P bits are zero.
     memset(pgtab, 0, PGSIZE);
     // The permissions here are overly generous, but they can
@@ -57,7 +58,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
-static int
+int
 mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 {
   char *a, *last;
@@ -69,7 +70,10 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
     if(*pte & PTE_P)
+    {
+      //cprintf("va=0x%p,size=%d,pa=0x%p\n",va,size,pa);
       panic("remap");
+    }
     *pte = pa | perm | PTE_P;
     if(a == last)
       break;
@@ -141,6 +145,8 @@ void
 kvmalloc(void)
 {
   kpgdir = setupkvm();
+  cprintf("setupkvm() allocated kpgdir. &kpgdir=0x%p(0x%p), kpgdir=0x%p(0x%p)\n",&kpgdir,V2P(&kpgdir),
+    kpgdir,V2P(kpgdir));
   switchkvm();
 }
 
@@ -237,6 +243,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       return 0;
     }
     memset(mem, 0, PGSIZE);
+    //cprintf("mappages(0x%x,0x%x,%d,0x%x,PTE_W|PTE_U\n",pgdir,(char*)a,PGSIZE,V2P(mem));
     if(mappages(pgdir, (char*)a, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
       cprintf("allocuvm out of memory (2)\n");
       deallocuvm(pgdir, newsz, oldsz);
@@ -382,10 +389,151 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
   return 0;
 }
 
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
+struct run {
+  struct run *next;
+};
 
+int vminfo_internal(struct vminfo_struct *vminfo_container)
+// Syscall which provides the user with memory information via a container structure vminfo_struct
+{
+  struct run *r = kgetfreelistptr();
+  int count = 0;
+
+  // Initialize the container
+  memset(vminfo_container,0,sizeof(struct vminfo_struct));
+
+  // General virtual memory info
+  vminfo_container->physical_pages_free = kfreepagecnt();
+  vminfo_container->physical_pages_allocated = kallocatedpages();
+  vminfo_container->kernel_data_lower_boundary = KERNLINK;
+  vminfo_container->kernel_data_upper_boundary = kallocbeginning();
+  vminfo_container->kernel_data_pages = 
+    (vminfo_container->kernel_data_upper_boundary - vminfo_container->kernel_data_lower_boundary) / PGSIZE;
+  vminfo_container->physical_pages_total = vminfo_container->kernel_data_pages +
+                                            vminfo_container->physical_pages_allocated +
+                                            vminfo_container->physical_pages_free;
+  vminfo_container->page_size = PGSIZE;
+
+  // Freelist info
+  vminfo_container->kernel_mem_freelist_first = (uint)r;
+
+  while (r)
+  {
+    if (!(r->next))
+      vminfo_container->kernel_mem_freelist_last = (uint)r;
+    r = r->next;
+    count++;
+  }
+
+  // Process info
+  procsmemorystats(vminfo_container);
+
+  return 0;
+}
+
+int pgtabinfo_internal(void)
+// Syscall that prints out the page table for the calling process, including kernel page table
+// Code borrowed from various other parts including walkpgdir()
+{
+  struct proc *currproc = myproc();
+  uint upgdircount = 0;             // User present page directory entry count
+  uint kpgdircount = 0;             // Kernel present page directory entry count
+  uint uphyspages = 0;              // User physical pages allocated
+  uint kphyspages = 0;              // Kernel physical pages allocated (entire kernel)
+
+  cprintf("Address of page table for process [%s] is 0x%p\n",currproc->name,currproc->pgdir);
+  cprintf("Process upper-bound address is 0x%p\n",currproc->sz);
+  cprintf("Last page inside process is 0x%p\n",PGROUNDDOWN(currproc->sz));
+
+  for (int index1 = 0; index1 < NPDENTRIES; index1++)
+  // Page tables have two tiers. Traverse tier 1, the page directory
+  {
+    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
+    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
+    //
+    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
+    pde_t *pde = &(currproc->pgdir[index1]);
+
+    if (*pde & PTE_P)
+    // Page directory
+    {
+      if (index1 < 512)
+        // User page
+        upgdircount++;
+      else
+        kpgdircount++;
+
+      // Now traverse through second tier, the page table corresponding to the page directory entry above
+      // This page table is full of PTEs, each of which can address 4KB
+      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+      uint pgtabentries = 0;
+      uint user_accessible = 0;
+
+      for (int index2 = 0; index2 < NPTENTRIES; index2++)
+      {
+        if (pgtab[index2] & PTE_P)
+        {
+          pgtabentries++;
+
+          if (pgtab[index2] & PTE_U)
+            user_accessible++;
+
+          // Inefficient but straightforward. Should be optimized via CPU pipelining anyway
+          if (index1 < 512)
+            uphyspages++;
+          else
+            kphyspages++;
+        }
+
+        if (index1 < 512 && index2 < 1000)
+        {
+          cprintf("PTE #%d: va: 0x%p. Flags: PTE_U=%d PTE_P=%d,PTE_W=%d\n",
+          index2,PGADDR(index1,index2,0),pgtab[index2] & PTE_U,pgtab[index2] & PTE_P, pgtab[index2] * PTE_W);
+
+          if (pgtab[index2] & PTE_P)
+            cprintf("PTE #%d: points to address: 0x%p\n",index2,PTE_ADDR(pgtab[index2]));
+        }
+      }
+
+      // TODO: Figure out which pages are requested but not yet allocated to physical memory (lazy allocation)
+      if (index1 < 512)
+        cprintf("PDE #%d: va: 0x%p. PTEs present: %d. PTE_U itself: %d. PTE_U cnt: %d\n",
+        index1,PGADDR(index1,0,0),pgtabentries,*pde & PTE_U,user_accessible);
+    }
+  }
+
+  cprintf("Total process pages requested/size: %d/%dKB\n",
+    PGROUNDUP(currproc->sz) / PGSIZE,PGROUNDUP(currproc->sz) / 1024);
+  cprintf("User page directory entries: %d. Kernel page directory entries: %d\n",upgdircount,kpgdircount);
+  cprintf("Total %d byte pages of physical memory allocated(user): %d\n",PGSIZE,uphyspages);
+  cprintf("Total %d byte pages of physical memory allocated(kernel): %d\n",PGSIZE,kphyspages);
+
+
+/*
+  pde_t *pde;
+  pte_t *pgtab;
+
+  pde = &pgdir[PDX(va)];
+  if(*pde & PTE_P){
+    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+  } else {
+    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+      return 0;
+    // Make sure all those PTE_P bits are zero.
+    memset(pgtab, 0, PGSIZE);
+    // The permissions here are overly generous, but they can
+    // be further restricted by the permissions in the page tablef
+    // entries, if necessary.
+    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
+  }
+  return &pgtab[PTX(va)];
+*/
+  return 0;
+}
+
+//PAGEBREAK!
+// Blank page.
+//PAGEBREAK!
+// Blank page.
+//PAGEBREAK!
+// Blank page.

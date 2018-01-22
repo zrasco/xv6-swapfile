@@ -35,6 +35,36 @@ printint(int fd, int xx, int base, int sgn)
     putc(fd, buf[i]);
 }
 
+static void printaddr(int fd, int xx, int base, int sgn)
+// Prints value as full 32-bit address with padded 0s
+{
+  static char digits[] = "0123456789ABCDEF";
+  char buf[16];
+  int i, neg;
+  uint x;
+
+  neg = 0;
+  if(sgn && xx < 0){
+    neg = 1;
+    x = -xx;
+  } else {
+    x = xx;
+  }
+
+  i = 0;
+  do{
+    buf[i++] = digits[x % base];
+  }while((x /= base) != 0);
+  if(neg)
+    buf[i++] = '-';
+
+  while (i < 8)
+    buf[i++] = '0';
+
+  while(--i >= 0)
+    putc(fd, buf[i]);
+}
+
 // Print to the given fd. Only understands %d, %x, %p, %s.
 void
 printf(int fd, char *fmt, ...)
@@ -57,8 +87,12 @@ printf(int fd, char *fmt, ...)
       if(c == 'd'){
         printint(fd, *ap, 10, 1);
         ap++;
-      } else if(c == 'x' || c == 'p'){
+      } else if(c == 'x'){
         printint(fd, *ap, 16, 0);
+        ap++;
+      } else if(c == 'p')
+      {
+        printaddr(fd, *ap, 16, 0);
         ap++;
       } else if(c == 's'){
         s = (char*)*ap;

@@ -50,9 +50,29 @@ sys_sbrk(void)
 
   if(argint(0, &n) < 0)
     return -1;
+  //else if (!kexistfreepages())
+  //  return -1;
+
   addr = myproc()->sz;
-  if(growproc(n) < 0)
+
+  if (addr > kmaxprocsize())
+  // No need to pretend we can allocate anything beyond this. The calling process would never be able to actually
+  // use all of this memory due to a lack of physical + swap pages.
     return -1;
+
+  if (n > 0)
+    // Increases the "requested pages" count. Physical pages incremented during lazy allocation
+    myproc()->sz += n;
+  else
+  {
+    if (growproc(n) < 0)
+      return -1;
+  } 
+
+  // Call removed to implement lazy allocation
+  //if(growproc(n) < 0)
+  //  return -1;
+
   return addr;
 }
 
@@ -88,4 +108,21 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// Return virtual memory information
+int sys_vminfo(void)
+{
+  struct vminfo_struct *vminfo_container;
+
+  if(argptr(0, (char**)&vminfo_container,sizeof(vminfo_container)) < 0)
+    return -1;
+
+  return vminfo_internal(vminfo_container);
+}
+
+// Return page table info for a given process
+int sys_pgtabinfo(void)
+{
+  return pgtabinfo_internal();
 }
