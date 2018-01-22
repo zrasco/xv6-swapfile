@@ -56,6 +56,7 @@ main(void)
       printf(1, "init (swap): swap file closed\n");
 
     }
+    
     printf(1, "init (swap): done initializing swap space\n");
     free(hdr);
     exit();
