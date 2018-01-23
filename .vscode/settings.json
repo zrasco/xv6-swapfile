@@ -4,6 +4,10 @@
         "buf.h": "c",
         "fs.h": "c",
         "swap.h": "c",
-        "defs.h": "c"
+        "defs.h": "c",
+        "memlayout.h": "c",
+        "mmu.h": "c",
+        "user.h": "c",
+        "fcntl.h": "c"
     }
 }

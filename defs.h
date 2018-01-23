@@ -198,9 +198,12 @@ int				vminfo_internal(struct vminfo_struct*);
 int 			pgtabinfo_internal(void);
 
 // swap.c
-void            kswapinit(void);            
 void            kswapd(void);
 unsigned int 	swap_page_count(void);
+unsigned int    *get_victim_page(unsigned int*);
+
+// swapuser.c
+void            swapinit(void);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

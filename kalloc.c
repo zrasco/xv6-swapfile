@@ -64,7 +64,7 @@ kinit2(void *vstart, void *vend)
   // Set maximum process size. Do not allow sbrk() to exceed this
   kmem.max_proc_size = (kswapmem.total_pages + kmem.free_pages) * PGSIZE;
 
-  cprintf("Max process memory size set to %dKB\n",kmem.max_proc_size / 1024);
+  cprintf("Max process memory size set to %dKB (%d physical pages, %d swap pages)\n",kmem.max_proc_size / 1024,kmem.free_pages,kswapmem.total_pages);
 
   kmem.use_lock = 1;
 }

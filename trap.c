@@ -7,6 +7,7 @@
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "swap.h"
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
@@ -146,6 +147,51 @@ trap(struct trapframe *tf)
 
         if (mem == NULL)
         {
+          // Out of physical memory, so invoke the swapper.
+          // Physical memory page range is anywhere from the 4MB kernel boundary to PHYSTOP (0x80400000 to 0x81000000, for example)
+          // uva2ka(currproc->pgdir, process virtual address as char* )
+
+          // 1) Choose a victim page via the LRU algorithm
+          // uva2ka
+          unsigned int proc_addr = 0;
+          
+          pde_t *victim_pde = (pde_t*)get_victim_page(&proc_addr);
+          pte_t *mapped_victim_pte = (pte_t*)victim_pde;
+          char *kernel_addr = P2V(PTE_ADDR(*mapped_victim_pte));
+
+          cprintf("Victim addr: 0x%p\n",victim_pde);
+          cprintf("Victim page chosen! process addr==0x%p, kernel addr==0x%p\n", proc_addr, kernel_addr);
+          //cprintf("pte=0x%p\n",victim);
+          cprintf("victim pte location=0x%p\nPTE flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n",
+                  victim_pde,*victim_pde & PTE_P,*victim_pde & PTE_U, *victim_pde & PTE_W,*victim_pde & PTE_D);
+                
+          // The process page table entry for this page should be at a unique address in kernel memory above the KERNBASE + 4MB line
+          // This gives us a unique offset to the swap map, which is shared amongst all processes
+          
+          //char *kaddr_of_victim = uva2ka(currproc->victim,)
+          swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
+          cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
+
+          swap_slot = swap_slot;
+          
+          // 2) If the victim is non-dirty and is already mapped to a slot in the swap file, do nothing.
+          // 2a) If the victim is dirty and is already mapped to a slot in the swap file, write that page to the swap file & clear dirty bit.
+
+          // 2b) If the victim is not mapped to a slot in the swap file, get a free slot & map it.
+          //     If none available, out of memory error and terminate process
+          // 2c) Otherwise, write that page to the swap file & clear dirty bit.
+
+          // 3) At this point we have a viable victim page, with the contents in the swapfile. Mark that page as non-present
+
+
+          // 4) Call mappages OR
+          // 4) Use kfree() on the associated address
+          kfree(kernel_addr);
+          // 4a) Use kalloc() to allocate the page. It should now succeed.
+          // kfree/kalloc seems a waste since it just returns the same address anyway. Possibly just remap?
+
+          cprintf("kalloc at 0x%p\n",kalloc());
+
           currproc->killed = 1;
           cprintf("Lazy allocation(1) failed at address 0x%p. Terminating process [%s].\n",
             fault_page,currproc->name);
@@ -170,6 +216,8 @@ trap(struct trapframe *tf)
 
             // Increase count of pages "actually" allocated
             currproc->phys_sz += PGSIZE;
+            //cprintf("Lazy allocation succeeded for address 0x%p(kalloc'ed 0x%p) for process [%s]\n", fault_page, mem, currproc->name);
+            //cprintf("uva2ka==0x%p\n",uva2ka(currproc->pgdir,(char*)fault_page));
 
             /*
             if (currproc->phys_sz > currproc->sz)

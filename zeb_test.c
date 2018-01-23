@@ -28,17 +28,27 @@ int myAtoi(char *str)
 
 int main(int argc, char *argv [])
 {
-	struct vminfo_struct *myvminfo = malloc(sizeof(struct vminfo_struct));
+  char *victim_addr = (char*)0x0000C000;
+  printf(1,"Target victim addr: 0x%p\n",victim_addr);
+	//struct vminfo_struct *myvminfo = malloc(sizeof(struct vminfo_struct));
 
-	vminfo(myvminfo);
+	//vminfo(myvminfo);
 
-	vminfo_printstats(myvminfo);
+	//vminfo_printstats(myvminfo);
+  
+	//printf(1,"Free swap pages: %d\n",myvminfo->swap_pages_free);
 
-	printf(1,"Free swap pages: %d\n",myvminfo->swap_pages_free);
   for (int x = 0; x < 1000000; x++)
   {
-    malloc(4096);
-    printf(1,"x==%d\n",x);
+    char *alloc_addr = malloc(4096);
+
+    if (x == 15)
+      pgtabinfo();
+    if (alloc_addr == NULL)
+      break;
+    //else
+    //  printf(1,"Allocating at address 0x%p\n",alloc_addr);
+    //printf(1,"x==%d\n",x);
   }
 	exit();
 

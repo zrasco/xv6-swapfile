@@ -21,6 +21,7 @@ struct swap_info_struct {
     //kdev_t swap_device;           // Device corresponding to the partition used for this swap area. Leave as NULL since we'll use a file
     struct spinlock sdev_lock;      // Lock protecting the structure
     struct file *swap_file;         // Pointer to the swapfile
+    int fd;                         // Open fd to swapfile
     unsigned short *swap_map;       // This is a large array with one entry for every swap entry, or page sized slot in the area.
                                     // An entry is a reference count of the number of users of this page slot.
                                     // The swap cache counts as one user and every PTE that has been paged out to the slot counts as a user. 
@@ -62,11 +63,13 @@ union swap_header {
 // TODO: Implement these
 // #define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)
 
-#define pte_to_swp_entry(pte)           (pte + 1)
-#define swp_entry_to_pte(swp_entry)     (swp_entry - 1)
+/* Encode and de-code a swap entry */
+#define pte_val(x)	((x).pte)
+#define pte_to_swp_entry(pte)	((swp_entry_t) { pte })
+#define swp_entry_to_pte(x)		((pte_t) { (x).val })
 
-#define SWP_OFFSET(swp_entry)           ((swp_entry >> 8) & 0x00FFFFFF)
-#define SWP_TYPE(swp_entry)             ((swp_entry >> 1) & 0x0000003F)
+#define SWP_OFFSET(swp_entry)           (((swp_entry).val >> 8) & 0x00FFFFFF)
+#define SWP_TYPE(swp_entry)             (((swp_entry).val >> 1) & 0x0000003F)
 
 // By having a 24-bit page offset, this allows for swapfiles up to 64GB (assuming 4096 byte PGSIZE, 64GB = 2^24 * PGSIZE)
 typedef struct {

@@ -31,34 +31,8 @@ main(void)
   }
   else if (pid_s == 0)
   {
-    int fd;
-    union swap_header *hdr = (union swap_header*)malloc(sizeof(union swap_header));
     /* In the child */
-    printf(1, "init (swap): initializing swap space\n");
-
-    fd = open(SWAPFILE_FILENAME,O_RDWR);
-
-    if (fd < 0)
-    {
-      printf(1, "init (swap): unable to open swap file\n");
-    }
-    else
-    {
-      printf(1, "init (swap): swap file opened\n");
-
-      memset(hdr, 0 ,sizeof(union swap_header));
-      strcpy(hdr->magic.magic,"SWAP-FILE");
-
-      printf(1, "init (swap): writing swap file header\n");
-      write(fd,hdr,sizeof(union swap_header));
-
-      close(fd);
-      printf(1, "init (swap): swap file closed\n");
-
-    }
-    
-    printf(1, "init (swap): done initializing swap space\n");
-    free(hdr);
+    swapinit();
     exit();
   }
   else

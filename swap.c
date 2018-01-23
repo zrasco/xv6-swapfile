@@ -9,59 +9,11 @@
 #include "swap.h"
 #include "stat.h"
 #include "fs.h"
-#include "sleeplock.h"
-#include "file.h"
 
 // In full linux, these are variables and defined in include/linux/mmzone.h
 // For the sake of simplicity, we'll define them here instead.
 #define PAGES_LOW 100
 #define PAGES_HIGH 1000
-
-struct swap_info_struct swap_info;
-
-void kswapinit()
-{
-  union swap_header *swap_header_local = (union swap_header*)kalloc();
-  
-  cprintf("Initializing swap file...\n");
-
-  //cprintf("Address of swap header: %x. Size: %d\n",swap_header_ptr,sizeof(union swap_header));
-  //cprintf("Address of swap info: %x. Size: %d\n",swap_info_ptr,sizeof(struct swap_info_struct));
-  
-  memset(&swap_info,0,sizeof(struct swap_info_struct));
-  memset(swap_header_local,0,sizeof(union swap_header));
-
-  // Set swap info fields
-
-/*
-  // Get # of pages in swapfile
-  {
-    int fd = 0;
-    struct file *f;
-    //struct stat st;
-    struct inode *ip;
-
-    //st = st;
-    fd = fd;
-
-    begin_op();
-    
-    if((ip = namei(SWAPFILE_FILENAME)) == 0)
-      panic("Could not open swapfile!\n");
-    else
-    {
-      cprintf("Size of swapfile: %d\n",ip->size);
-    }      
-    end_op();
-    
-    f = f;
-  }
-  */
-
-
-  kfree((char*)swap_header_local);
-  cprintf("Done initializing swap file.\n");
-}
 
 void kswapd()
 {
@@ -81,7 +33,46 @@ unsigned int swap_page_count()
   //return 65536 / 4096;
 }
 
+unsigned int *get_victim_page(unsigned int *proc_addr)
+// Returns the address of a page directory entry for the next victim page
+{
+  // Not yet implemented. Uses LRU with all processes in the system (kernel memory is all considered non-swappable)
+  struct proc *currproc = myproc();
 
+  // For now, just get first present page available from the process that needs a victim page
+
+  // Below is stolen from pgtabinfo_internal. Ignore the first 10 pages to prevent thrasing w/code execution (code will keep being paged out & back in)
+
+  for (int index1 = 0; index1 < NPDENTRIES; index1++)
+  // Page tables have two tiers. Traverse tier 1, the page directory
+  {
+    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
+    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
+    //
+    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
+    pde_t *pde = &(currproc->pgdir[index1]);
+
+    if (*pde & PTE_P && index1 < 512)
+    // Page directory
+    {
+      // Now traverse through second tier, the page table corresponding to the page directory entry above
+      // This page table is full of PTEs, each of which can address 4KB
+      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+      for (int index2 = 11; index2 < NPTENTRIES; index2++)
+      {
+        if (pgtab[index2] & PTE_P)
+        {
+          *proc_addr = (unsigned int)PGADDR(index1,index2,0);
+          return (unsigned int*)&pgtab[index2];
+        }
+          
+      }
+    }
+  }
+
+  return 0;
+}
 
 /*
 unsigned int swap_page_count()
