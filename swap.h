@@ -63,11 +63,11 @@ union swap_header {
 // TODO: Implement these
 // #define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)
 
-/* Encode and de-code a swap entry */
-#define pte_val(x)	((x).pte)
+/* Encode and de-code a swap entry */   
 #define pte_to_swp_entry(pte)	((swp_entry_t) { pte })
 #define swp_entry_to_pte(x)		((pte_t) { (x).val })
 
+#define SWP_ENTRY(type, offset)		    ((swp_entry_t) { ((type) << 1) | ((offset) << 8) })
 #define SWP_OFFSET(swp_entry)           (((swp_entry).val >> 8) & 0x00FFFFFF)
 #define SWP_TYPE(swp_entry)             (((swp_entry).val >> 1) & 0x0000003F)
 
