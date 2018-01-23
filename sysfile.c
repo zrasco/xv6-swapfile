@@ -128,6 +128,18 @@ int sys_writepos(void)
   return retval;
 }
 
+int sys_setswapfilefd(void)
+{
+  struct file *f;
+  
+  if(argfd(0, 0, &f) < 0)
+    return -1;
+
+  ksetswapfileptr(f);
+
+  return 0;
+}
+
 int
 sys_close(void)
 {

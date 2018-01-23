@@ -5,9 +5,26 @@
 
 // Implemented by Zeb Rasco <rascozeb@gmail.com>
 
+// spinlock.c
+void            acquire(struct spinlock*);
+void            getcallerpcs(void*, uint*);
+int             holding(struct spinlock*);
+void            initlock(struct spinlock*, char*);
+void            release(struct spinlock*);
+void            pushcli(void);
+void            popcli(void);
+
+
 #define SWAPFILE_FILENAME "SWAPFILE"
 #define SWAPFILE_PAGES ((8 * 1024 * 1024) / PGSIZE) - 1
 #define MAX_SWAP_BADPAGES (PGIZE - 1024 - 512 - 10) / sizeof(long)
+
+/* From Linux 2.4 source code */
+#define SWP_USED	1
+#define SWP_WRITEOK	3
+#define SWAP_CLUSTER_MAX 32
+#define SWAP_MAP_MAX	0x7fff
+#define SWAP_MAP_BAD	0x8000
 
 // This would contain a prioritized swap order, but will likely be implemented as an array of one
 struct swap_list_t {
@@ -79,3 +96,10 @@ typedef struct {
                                     // Bit 7 is reserved for PAGE_PROTNONE (Page is resident, but not accessible)
                                     // Bits 8-31 are used are to store the offset within the swap_map from the swp_entry_t
 } swp_entry_t;
+
+/* From Linux 2.4, changed for xv6 */
+extern struct spinlock swaplock;
+#define swap_list_lock()	acquire(&swaplock)
+#define swap_list_unlock()	release(&swaplock)
+#define swap_device_lock(p)	acquire(&p->sdev_lock)
+#define swap_device_unlock(p)	release(&p->sdev_lock)

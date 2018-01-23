@@ -8,6 +8,7 @@
         "memlayout.h": "c",
         "mmu.h": "c",
         "user.h": "c",
-        "fcntl.h": "c"
+        "fcntl.h": "c",
+        "spinlock.h": "c"
     }
 }

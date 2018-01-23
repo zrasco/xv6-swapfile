@@ -29,6 +29,7 @@ int vminfo(struct vminfo_struct*);
 int pgtabinfo(void);
 int readpos(int, uint, void*, int);
 int writepos(int, uint, void*, int);
+int setswapfilefd(int fd);
 
 // ulib.c
 int stat(char*, struct stat*);

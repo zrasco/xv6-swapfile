@@ -24,3 +24,4 @@
 #define SYS_pgtabinfo	23
 #define SYS_readpos     24
 #define SYS_writepos    25
+#define SYS_setswapfilefd   26
