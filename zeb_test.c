@@ -29,7 +29,33 @@ int myAtoi(char *str)
 int main(int argc, char *argv [])
 {
   char *victim_addr = (char*)0x0000C000;
+  char *alloc_addr = NULL;
+  alloc_addr = alloc_addr;
+  //char ch;
   printf(1,"Target victim addr: 0x%p\n",victim_addr);
+
+  /*
+  ch = 5;
+  ch = ch;
+  printf(1,"Before malloc\n");
+  
+  printf(1,"Malloc returned 0x%p\n",alloc_addr);
+  
+  printf(1,"Before read attempt\n");
+  ch = *alloc_addr;
+  printf(1,"After read attempt\n");
+
+  printf(1,"Before write attempt\n");
+  *alloc_addr = 'x';
+  printf(1,"After write attempt\n");
+
+  printf(1,"Before write attempt 2\n");
+  *alloc_addr = 'x';
+  printf(1,"After write attempt 2\n");
+
+  exit();
+  */
+
 	//struct vminfo_struct *myvminfo = malloc(sizeof(struct vminfo_struct));
 
 	//vminfo(myvminfo);
@@ -40,14 +66,20 @@ int main(int argc, char *argv [])
 
   for (int x = 0; x < 1000000; x++)
   {
-    char *alloc_addr = malloc(4096);
+    // Malloc header is 8 bytes, so entire allocated block takes up exactly one page
+    // Hence alloc_addr will always fall on a page boundary + 8 (ex. 0x0000A008)
+    char *alloc_addr = malloc(4096-8);
 
     if (x == 15)
       pgtabinfo();
     if (alloc_addr == NULL)
       break;
-    //else
-    //  printf(1,"Allocating at address 0x%p\n",alloc_addr);
+    else
+      printf(1,"Page #%d: malloc returned 0x%p\n",x + 1,alloc_addr);
+
+    //char ch = *alloc_addr;
+    //ch = ch * 1;
+
     //printf(1,"x==%d\n",x);
   }
 	exit();

@@ -200,6 +200,7 @@ int 			pgtabinfo_internal(void);
 // swap.c
 void            kswapd(void);
 void            kswapinit(void);
+unsigned int    swap_page_total_count(void);
 unsigned int 	swap_page_count(void);
 unsigned int    *get_victim_page(unsigned int*);
 void            ksetswapfileptr(struct file*);

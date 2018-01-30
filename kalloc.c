@@ -59,7 +59,7 @@ kinit2(void *vstart, void *vend)
   freerange(vstart, vend);
   kmem.allocated_pages = 0;
   kmem.free_pages = kfreepagecnt();
-  kswapmem.total_pages = swap_page_count();
+  kswapmem.total_pages = swap_page_total_count();
 
   // Set maximum process size. Do not allow sbrk() to exceed this
   kmem.max_proc_size = (kswapmem.total_pages + kmem.free_pages) * PGSIZE;
@@ -135,6 +135,19 @@ kalloc(void)
 
   if(kmem.use_lock)
     release(&kmem.lock);
+
+  if (r == NULL)
+  {
+
+    if (swap_page_count() > 0)
+    {
+      // Pick a victim page to swap out
+
+    }
+
+    cprintf("kalloc: swap_pages==%d\n",swap_pages);
+  }
+  
   return (char*)r;
 }
 

@@ -96,7 +96,7 @@ trap(struct trapframe *tf)
   case T_PGFLT:
     if (myproc() == 0)
     // No page faults should happen in kernel mode
-      panic("trap");
+      panic("trap: page fault in kernel mode");
     else
     {
       struct proc *currproc = myproc();
@@ -149,8 +149,14 @@ trap(struct trapframe *tf)
         // This is probably OK but I'm tired!
         mem = kalloc();
 
+        if (mem != NULL)
+          cprintf("Memory allocated from lazy allocator for process [%s]. eip==0x%p, fault_addr==0x%p, fault_page==0x%p, kernel_addr==0x%p\n",
+                  currproc->name,tf->eip,fault_addr,fault_page,mem);
+
         if (mem == NULL)
         {
+          cprintf("Out of physical memory and invoking swapper [%s]. eip==0x%p, fault_addr==0x%p, fault_page==0x%p\n",
+                  currproc->name,tf->eip,fault_addr,fault_page);
           // Out of physical memory, so invoke the swapper.
           // Physical memory page range is anywhere from the 4MB kernel boundary to PHYSTOP (0x80400000 to 0x81000000, for example)
           // uva2ka(currproc->pgdir, process virtual address as char* )
@@ -162,6 +168,7 @@ trap(struct trapframe *tf)
           
           pde_t *victim_pde = (pde_t*)get_victim_page(&proc_addr);
           pte_t *mapped_victim_pte = (pte_t*)victim_pde;
+          pte_t new_victim_pte = 0;
           char *kernel_addr = P2V(PTE_ADDR(*mapped_victim_pte));
 
           cprintf("Victim addr: 0x%p\n",victim_pde);
@@ -177,13 +184,29 @@ trap(struct trapframe *tf)
 
           //swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
           swp_entry_t new_slot = get_swap_page();
-          cprintf("Got new swap slot. Slot #%d\n",SWP_OFFSET(new_slot));
+          cprintf("Got new swap slot. Slot #%d. Swap pages left: %d\n",SWP_OFFSET(new_slot),swap_page_count());
           
           cprintf("Writing contents of page to %s at position %d\n",SWAPFILE_FILENAME,PGSIZE * (SWP_OFFSET(new_slot) + 1));
           //cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
           swap_val = swap_out(victim_pde, SWP_OFFSET(new_slot));
           cprintf("Done writing contents. swap_val==%d\n",swap_val);
           
+          // PTE no longer resident or dirty
+          new_victim_pte = swp_entry_to_pte(new_slot);
+          new_victim_pte |= PTE_FLAGS(*mapped_victim_pte);
+	        new_victim_pte &= ~PTE_P;
+        	new_victim_pte &= ~PTE_D;
+
+          // Replace the PTE
+          *mapped_victim_pte = new_victim_pte;
+
+          //*mapped_victim_pte = swp_entry_to_pte(new_slot);
+
+          cprintf("victim pte location=0x%p\nPTE flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n",
+                  victim_pde,*victim_pde & PTE_P,*victim_pde & PTE_U, *victim_pde & PTE_W,*victim_pde & PTE_D);          
+
+          cprintf("new victim pte offset: %d, flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n", SWP_OFFSET(new_slot),
+                  new_victim_pte & PTE_P,new_victim_pte & PTE_U,new_victim_pte & PTE_W,new_victim_pte & PTE_D);
 
           //swap_slot = swap_slot;
           
@@ -199,15 +222,20 @@ trap(struct trapframe *tf)
 
           // 4) Call mappages OR
           // 4) Use kfree() on the associated address
-          kfree(kernel_addr);
-          // 4a) Use kalloc() to allocate the page. It should now succeed.
-          // kfree/kalloc seems a waste since it just returns the same address anyway. Possibly just remap?
+          
 
-          cprintf("kalloc at 0x%p\n",kalloc());
+          if(mappages(currproc->pgdir, (char*)fault_page, PGSIZE, V2P(kernel_addr), PTE_W|PTE_U) < 0) {
+            cprintf("Lazy allocation(1) failed at address 0x%p. Terminating process [%s].\n",
+              fault_page,currproc->name);
+            //deallocuvm(pgdir, newsz, oldsz);
+            kfree(kernel_addr);
+            currproc->killed = 1;
+          }
+          else
+          {
+            cprintf("mappages succeeded in [%s]. Mapped va 0x%p to kernel page 0x%p\n",currproc->name, fault_page,kernel_addr);
+          }
 
-          currproc->killed = 1;
-          cprintf("Lazy allocation(1) failed at address 0x%p. Terminating process [%s].\n",
-            fault_page,currproc->name);
         }
         else
         {

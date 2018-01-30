@@ -37,6 +37,7 @@ void kswapinit()
 	swap_info[0].pages = SWAPFILE_PAGES;
 	swap_info[0].swap_map_pages = 1 + (swapmap_bytes_needed / PGSIZE);
 	swap_info[0].flags = SWP_WRITEOK;
+	swap_info[0].highest_bit = SWAPFILE_PAGES;
 
 	initlock(&swaplock,"swaplock");
 	initlock(&swap_info[0].sdev_lock,"sdev_lock");
@@ -64,7 +65,10 @@ void kswapinit()
 		
 		if (x == swap_info[0].swap_map_pages - 1)
 		{
+			// Allocate & zero out this section of the map
 			swap_info[0].swap_map = (unsigned short*)new_kalloc_page;
+			memset(new_kalloc_page,0,PGSIZE);
+
 			cprintf("kernel: Swap map pointer set to address 0x%p\n",new_kalloc_page);
 		}
 	}
@@ -82,12 +86,14 @@ void kswapd()
   }
 }
 
+unsigned int swap_page_total_count()
+{
+	return SWAPFILE_PAGES;
+}
+
 unsigned int swap_page_count()
 {
-  // TODO: Use swapfile mechanism to get actual # of pages
-  return SWAPFILE_PAGES;
-  //return swap_info_ptr->pages;
-  //return 65536 / 4096;
+  return swap_info[0].pages;
 }
 
 unsigned int *get_victim_page(unsigned int *proc_addr)
@@ -143,23 +149,32 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	// SWAPFILE pointer not set yet with ksetswapfileptr() system call
 		return -1;
 
-	cprintf("Writing page located at 0x%p to file with file pointer at address 0x%p\n",kernel_addr,p->swap_file);
+	cprintf("Writing page located at 0x%p to file with file pointer at address 0x%p from bytes %d to %d\n",
+						kernel_addr,p->swap_file,(file_offset * PGSIZE), (file_offset * PGSIZE) + PGSIZE);
 
 	old_offset = p->swap_file->off;
 	
+	/*
+	cprintf("Before list lock\n");
 	swap_list_lock();
+	cprintf("Before device lock\n");
 	swap_device_lock(p);
+	*/
 
 	// Write contents to swapfile
 	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
-  retval = filewrite(p->swap_file,kernel_addr,PGSIZE);
-  p->swap_file->off = old_offset;  
+  	retval = filewrite(p->swap_file,kernel_addr,PGSIZE);
+  	p->swap_file->off = old_offset;
 
-	// Mark PTE bits
-	
+	// Update swap reference counter
+	p->swap_map[offset]++;
 
+	/*
+	cprintf("Before dev unlock\n");
 	swap_device_unlock(p);
+	cprintf("Before list unlock\n");
 	swap_list_unlock();
+	*/
 
 	return retval;
 }
@@ -184,9 +199,9 @@ swp_entry_t get_swap_page()
 		p = &swap_info[type];
 		if ((p->flags & SWP_WRITEOK) == SWP_WRITEOK) {
 			swap_device_lock(p);
-			cprintf("before scan_swap_map\n");
+			//cprintf("before scan_swap_map\n");
 			offset = scan_swap_map(p);
-			cprintf("after scan_swap_map. offset==%d\n",offset);
+			//cprintf("after scan_swap_map. offset==%d\n",offset);
 			
 			swap_device_unlock(p);
 			if (offset >= 0) {
@@ -226,7 +241,7 @@ inline void ksetswapfileptr(struct file *f)
   cprintf("kernel: Swap file pointer set! Address of file pointer: 0x%p\n",f);
 	cprintf("kernel: inode ptr: 0x%p\n",f->ip);
 	cprintf("kernel: offset: 0x%p\n",f->off);
-  swap_info[0].swap_file = f;
+  swap_info[0].swap_file = filedup(f);
 }
 
 inline int scan_swap_map(struct swap_info_struct *si)
@@ -270,6 +285,7 @@ inline int scan_swap_map(struct swap_info_struct *si)
 	}
 	/* No luck, so now go finegrined as usual. -Andrea */
 	for (offset = si->lowest_bit; offset <= si->highest_bit ; offset++) {
+		
 		if (si->swap_map[offset])
 			continue;
 		si->lowest_bit = offset+1;
