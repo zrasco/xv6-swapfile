@@ -36,6 +36,10 @@ void kswapinit()
 	memset(&swap_info[0],0,sizeof(struct swap_info_struct));
 	swap_info[0].pages = SWAPFILE_PAGES;
 	swap_info[0].swap_map_pages = 1 + (swapmap_bytes_needed / PGSIZE);
+	swap_info[0].flags = SWP_WRITEOK;
+
+	initlock(&swaplock,"swaplock");
+	initlock(&swap_info[0].sdev_lock,"sdev_lock");
 
 	cprintf("kernel: swapmap bytes needed: %d\n",swapmap_bytes_needed);
 	cprintf("kernel: swapmap pages needed: %d\n",swap_info[0].swap_map_pages);
@@ -127,6 +131,39 @@ unsigned int *get_victim_page(unsigned int *proc_addr)
   return 0;
 }
 
+int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
+// My own method (basically add_to_swap_cache() without the cache)
+{
+	struct swap_info_struct *p = &swap_info[0];
+	int file_offset = offset + 1, retval = -1;
+	uint old_offset;
+	char *kernel_addr = P2V(PTE_ADDR(*mapped_victim_pte));
+
+	if (p->swap_file == NULL)
+	// SWAPFILE pointer not set yet with ksetswapfileptr() system call
+		return -1;
+
+	cprintf("Writing page located at 0x%p to file with file pointer at address 0x%p\n",kernel_addr,p->swap_file);
+
+	old_offset = p->swap_file->off;
+	
+	swap_list_lock();
+	swap_device_lock(p);
+
+	// Write contents to swapfile
+	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
+  retval = filewrite(p->swap_file,kernel_addr,PGSIZE);
+  p->swap_file->off = old_offset;  
+
+	// Mark PTE bits
+	
+
+	swap_device_unlock(p);
+	swap_list_unlock();
+
+	return retval;
+}
+
 /* From linux 2.4 source code w/modifications */
 swp_entry_t get_swap_page()
 {
@@ -147,9 +184,12 @@ swp_entry_t get_swap_page()
 		p = &swap_info[type];
 		if ((p->flags & SWP_WRITEOK) == SWP_WRITEOK) {
 			swap_device_lock(p);
+			cprintf("before scan_swap_map\n");
 			offset = scan_swap_map(p);
+			cprintf("after scan_swap_map. offset==%d\n",offset);
+			
 			swap_device_unlock(p);
-			if (offset) {
+			if (offset >= 0) {
 				entry = SWP_ENTRY(type,offset);
 
         /* Don't need the type stuff below\
@@ -183,7 +223,9 @@ out:
 
 inline void ksetswapfileptr(struct file *f)
 {
-  cprintf("kernel: Swap file pointer set!\n");
+  cprintf("kernel: Swap file pointer set! Address of file pointer: 0x%p\n",f);
+	cprintf("kernel: inode ptr: 0x%p\n",f->ip);
+	cprintf("kernel: offset: 0x%p\n",f->off);
   swap_info[0].swap_file = f;
 }
 

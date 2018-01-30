@@ -20,6 +20,7 @@ int mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm);
 pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // Imported from swap.c
+int swap_out(pte_t*, unsigned int);
 swp_entry_t get_swap_page(void);
 
 void
@@ -157,6 +158,7 @@ trap(struct trapframe *tf)
           // 1) Choose a victim page via the LRU algorithm
           // uva2ka
           unsigned int proc_addr = 0;
+          int swap_val = 0;
           
           pde_t *victim_pde = (pde_t*)get_victim_page(&proc_addr);
           pte_t *mapped_victim_pte = (pte_t*)victim_pde;
@@ -176,7 +178,12 @@ trap(struct trapframe *tf)
           //swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
           swp_entry_t new_slot = get_swap_page();
           cprintf("Got new swap slot. Slot #%d\n",SWP_OFFSET(new_slot));
+          
+          cprintf("Writing contents of page to %s at position %d\n",SWAPFILE_FILENAME,PGSIZE * (SWP_OFFSET(new_slot) + 1));
           //cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
+          swap_val = swap_out(victim_pde, SWP_OFFSET(new_slot));
+          cprintf("Done writing contents. swap_val==%d\n",swap_val);
+          
 
           //swap_slot = swap_slot;
           
