@@ -28,6 +28,46 @@ int scan_swap_map(struct swap_info_struct*);
 
 #define SWAPFILE_CLUSTER 16
 
+void kswapinit()
+{
+	unsigned int swapmap_bytes_needed = SWAPFILE_PAGES * sizeof(unsigned short);
+	cprintf("kernel: Initializing swap info\n");
+
+	memset(&swap_info[0],0,sizeof(struct swap_info_struct));
+	swap_info[0].pages = SWAPFILE_PAGES;
+	swap_info[0].swap_map_pages = 1 + (swapmap_bytes_needed / PGSIZE);
+
+	cprintf("kernel: swapmap bytes needed: %d\n",swapmap_bytes_needed);
+	cprintf("kernel: swapmap pages needed: %d\n",swap_info[0].swap_map_pages);
+
+	for (int x = 0; x < swap_info[0].swap_map_pages; x++)
+	{
+		// IMPORTANT NOTE:
+		// We assume here that kalloc'ed pages will happen in a sequence from high to low. This method should be executed early enough
+		// in xv6 initialization, so this should happen every time. Hence we can do a strightforward implementation.
+		//
+		// Example scenario:
+		// 4 pages needed for the swap map total, so 4 passes thru the loop
+		// 1st page allocated at 0x804FF000
+		// 2nd page allocated at 0x804FE000
+		// 3rd page allocated at 0x804FD000
+		// 4th page allocated at 0x804FC000. Swap map pointer set to 0x804FC000 since this is the last page.
+		//
+		// In this case we have the range for the swap map allocated from 0x804FC000 to 0x804FFFFF for a total of 16k
+
+		char *new_kalloc_page = kalloc();
+		cprintf("kernel: Allocating page for swap map at address 0x%p\n",new_kalloc_page);
+		
+		if (x == swap_info[0].swap_map_pages - 1)
+		{
+			swap_info[0].swap_map = (unsigned short*)new_kalloc_page;
+			cprintf("kernel: Swap map pointer set to address 0x%p\n",new_kalloc_page);
+		}
+	}
+	
+	cprintf("kernel: Done initializing swap info\n");
+}
+
 void kswapd()
 {
   int free_pages = kfreepagecnt1();
@@ -143,7 +183,7 @@ out:
 
 inline void ksetswapfileptr(struct file *f)
 {
-  cprintf("Swap file pointer set!\n");
+  cprintf("kernel: Swap file pointer set!\n");
   swap_info[0].swap_file = f;
 }
 

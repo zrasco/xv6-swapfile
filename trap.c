@@ -19,6 +19,9 @@ uint ticks;
 int mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm);
 pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
+// Imported from swap.c
+swp_entry_t get_swap_page(void);
+
 void
 tvinit(void)
 {
@@ -169,10 +172,13 @@ trap(struct trapframe *tf)
           // This gives us a unique offset to the swap map, which is shared amongst all processes
           
           //char *kaddr_of_victim = uva2ka(currproc->victim,)
-          swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
-          cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
 
-          swap_slot = swap_slot;
+          //swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
+          swp_entry_t new_slot = get_swap_page();
+          cprintf("Got new swap slot. Slot #%d\n",SWP_OFFSET(new_slot));
+          //cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
+
+          //swap_slot = swap_slot;
           
           // 2) If the victim is non-dirty and is already mapped to a slot in the swap file, do nothing.
           // 2a) If the victim is dirty and is already mapped to a slot in the swap file, write that page to the swap file & clear dirty bit.

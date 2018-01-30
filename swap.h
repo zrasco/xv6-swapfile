@@ -16,7 +16,7 @@ void            popcli(void);
 
 
 #define SWAPFILE_FILENAME "SWAPFILE"
-#define SWAPFILE_PAGES ((8 * 1024 * 1024) / PGSIZE) - 1
+#define SWAPFILE_PAGES (((8 * 1024 * 1024) / PGSIZE) - 1)
 #define MAX_SWAP_BADPAGES (PGIZE - 1024 - 512 - 10) / sizeof(long)
 
 /* From Linux 2.4 source code */
@@ -39,6 +39,7 @@ struct swap_info_struct {
     struct spinlock sdev_lock;      // Lock protecting the structure
     struct file *swap_file;         // Pointer to the swapfile
     int fd;                         // Open fd to swapfile
+    unsigned int swap_map_pages;    // Number of kalloc()'ed pages used by the swap map
     unsigned short *swap_map;       // This is a large array with one entry for every swap entry, or page sized slot in the area.
                                     // An entry is a reference count of the number of users of this page slot.
                                     // The swap cache counts as one user and every PTE that has been paged out to the slot counts as a user. 

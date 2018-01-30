@@ -487,8 +487,8 @@ int pgtabinfo_internal(void)
 
         if (index1 < 512 && index2 < 100)
         {
-          cprintf("PTE #%d: va: 0x%p. Flags: PTE_U=%d PTE_P=%d,PTE_W=%d,PTE_D=%d\n",
-          index2,PGADDR(index1,index2,0),pgtab[index2] & PTE_U,pgtab[index2] & PTE_P, pgtab[index2] & PTE_W, pgtab[index2] & PTE_D);
+          cprintf("PTE #%d(at addr 0x%p): va: 0x%p. Flags: PTE_U=%d PTE_P=%d,PTE_W=%d,PTE_D=%d\n",
+          index2,&pgtab[index2],PGADDR(index1,index2,0),pgtab[index2] & PTE_U,pgtab[index2] & PTE_P, pgtab[index2] & PTE_W, pgtab[index2] & PTE_D);
 
           if (pgtab[index2] & PTE_P)
             cprintf("PTE #%d: points to address: 0x%p\n",index2,PTE_ADDR(pgtab[index2]));

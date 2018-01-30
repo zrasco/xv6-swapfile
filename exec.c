@@ -96,6 +96,7 @@ exec(char *path, char **argv)
   // Commit to the user image.
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
+  cprintf("Process [%s] page table created at 0x%p\n",curproc->name,curproc->pgdir);
   curproc->sz = sz;
   curproc->phys_sz = sz;          // Memory already mapped
   curproc->page_fault_cnt = 0;    // Page fault count
