@@ -105,8 +105,6 @@ extern int sys_write(void);
 extern int sys_uptime(void);
 extern int sys_vminfo(void);
 extern int sys_pgtabinfo(void);
-extern int sys_readpos(void);
-extern int sys_writepos(void);
 extern int sys_setswapfilefd(void);
 
 static int (*syscalls[])(void) = {
@@ -133,8 +131,6 @@ static int (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_vminfo]  sys_vminfo,
 [SYS_pgtabinfo]   sys_pgtabinfo,
-[SYS_readpos]   sys_readpos,
-[SYS_writepos]  sys_writepos,
 [SYS_setswapfilefd] sys_setswapfilefd
 };
 

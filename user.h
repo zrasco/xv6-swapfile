@@ -27,8 +27,6 @@ int sleep(int);
 int uptime(void);
 int vminfo(struct vminfo_struct*);
 int pgtabinfo(void);
-int readpos(int, uint, void*, int);
-int writepos(int, uint, void*, int);
 int setswapfilefd(int fd);
 
 // ulib.c
