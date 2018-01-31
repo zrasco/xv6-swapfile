@@ -68,27 +68,28 @@ int main(int argc, char *argv [])
   {
     // Malloc header is 8 bytes, so entire allocated block takes up exactly one page
     // Hence alloc_addr will always fall on a page boundary + 8 (ex. 0x0000A008)
+    printf(1,"Allocating a page...");
     char *alloc_addr = malloc(4096-8);
 
     if (x == 15)
     {
-      *victim_addr = 'Z';
+      *victim_addr = 'Y';
       pgtabinfo();
     }
       
     else if (x == 939)
     {
       // Our pet victim page should be swapped out by now
-      printf(1,"Reading from victim area\n");
+      printf(1,"\nReading from victim area");
       char ch = *victim_addr;
 
       ch = ch * 1;
-      printf(1,"Done reading from victim area. Value==%d\n",ch);
+      printf(1,"\nDone reading from victim area. Value==%d\n",ch);
     }
     if (alloc_addr == NULL)
       break;
     else
-      printf(1,"Page #%d: malloc returned 0x%p\n",x + 1,alloc_addr);
+      printf(1,"page #%d: malloc returned 0x%p\n",x + 1,alloc_addr);
 
     //char ch = *alloc_addr;
     //ch = ch * 1;

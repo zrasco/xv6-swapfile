@@ -27,6 +27,7 @@ swp_entry_t get_swap_page(void);
 int scan_swap_map(struct swap_info_struct*);
 
 #define SWAPFILE_CLUSTER 16
+//#define SWAPFILE_CLUSTER 3
 
 void kswapinit()
 {
@@ -34,10 +35,12 @@ void kswapinit()
 	cprintf("kernel: Initializing swap info\n");
 
 	memset(&swap_info[0],0,sizeof(struct swap_info_struct));
-	swap_info[0].pages = SWAPFILE_PAGES;
+	swap_info[0].pages = swap_info[0].max = SWAPFILE_PAGES;
+	swap_info[0].max--;
 	swap_info[0].swap_map_pages = 1 + (swapmap_bytes_needed / PGSIZE);
 	swap_info[0].flags = SWP_WRITEOK;
-	swap_info[0].highest_bit = SWAPFILE_PAGES;
+	swap_info[0].highest_bit = SWAPFILE_PAGES - 1;
+	swap_info[0].cluster_nr = SWAPFILE_CLUSTER;
 
 	initlock(&swaplock,"swaplock");
 	initlock(&swap_info[0].sdev_lock,"sdev_lock");
@@ -127,6 +130,7 @@ int swap_entry_free(struct swap_info_struct *p, unsigned long offset)
 			if (offset > p->highest_bit)
 				p->highest_bit = offset;
 			p->pages++;
+			//cprintf("swap slot %d freed. # of swap pages: %d\n",offset,p->pages);
 		}
 	}
 	return count;
@@ -191,35 +195,28 @@ unsigned int *get_victim_page(unsigned int *proc_addr)
 void free_swap_pages(struct proc *currproc)
 // Frees all swap pages 
 {
-  print_swap_map();
+  //print_swap_map();
   swap_list_lock();
 
+	// Standard page directory crawl
   for (int index1 = 0; index1 < NPDENTRIES; index1++)
-  // Page tables have two tiers. Traverse tier 1, the page directory
   {
-    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
-    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
-    //
-    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
     pde_t *pde = &(currproc->pgdir[index1]);
 
     if (*pde & PTE_P && index1 < 512)
-    // Page directory
     {
-      // Now traverse through second tier, the page table corresponding to the page directory entry above
-      // This page table is full of PTEs, each of which can address 4KB
       pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
 
       for (int index2 = 11; index2 < NPTENTRIES; index2++)
       {
         if (!(pgtab[index2] & PTE_P))
         {
-		  // Check if this page is swapped out
-		  swp_entry_t this_entry = pte_to_swp_entry(pgtab[index2]);
-		  uint offset = SWP_OFFSET(this_entry);
+					// Check if this page is swapped out
+					swp_entry_t this_entry = pte_to_swp_entry(pgtab[index2]);
+					uint offset = SWP_OFFSET(this_entry);
 
-		  if (offset <= SWAPFILE_PAGES && swap_info[0].swap_map[offset] != 0)
-			swap_free_nolocks(this_entry);
+					if (offset < SWAPFILE_PAGES && swap_info[0].swap_map[offset] != 0)
+					swap_free_nolocks(this_entry);
         }
       }
     }
@@ -288,8 +285,8 @@ int swap_in(void *page_addr, unsigned int offset)
 
 	// Read contents from swapfile
 	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
-  	retval = fileread(p->swap_file,page_addr,PGSIZE);
-  	p->swap_file->off = old_offset;
+  retval = fileread(p->swap_file,page_addr,PGSIZE);
+  p->swap_file->off = old_offset;
 
 	return retval;
 }
@@ -354,8 +351,8 @@ out:
 inline void ksetswapfileptr(struct file *f)
 {
   cprintf("kernel: Swap file pointer set! Address of file pointer: 0x%p\n",f);
-	cprintf("kernel: inode ptr: 0x%p\n",f->ip);
-	cprintf("kernel: offset: 0x%p\n",f->off);
+	//cprintf("kernel: inode ptr: 0x%p\n",f->ip);
+	//cprintf("kernel: offset: 0x%p\n",f->off);
   swap_info[0].swap_file = filedup(f);
 }
 
@@ -373,9 +370,11 @@ inline int scan_swap_map(struct swap_info_struct *si)
 	if (si->cluster_nr) {
 		while (si->cluster_next <= si->highest_bit) {
 			offset = si->cluster_next++;
+			//cprintf("in first if. si->cluster_next==%d, si->highest_bit==%d\n",si->cluster_next,si->highest_bit);
 			if (si->swap_map[offset])
 				continue;
 			si->cluster_nr--;
+			//cprintf("in first if. offset==%d\n",offset);
 			goto got_page;
 		}
 	}
@@ -396,11 +395,11 @@ inline int scan_swap_map(struct swap_info_struct *si)
 		/* We found a completly empty cluster, so start
 		 * using it.
 		 */
+		//cprintf("in second if. offset==%d\n",offset);
 		goto got_page;
 	}
 	/* No luck, so now go finegrined as usual. -Andrea */
 	for (offset = si->lowest_bit; offset <= si->highest_bit ; offset++) {
-		
 		if (si->swap_map[offset])
 			continue;
 		si->lowest_bit = offset+1;
