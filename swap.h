@@ -16,7 +16,9 @@ void            popcli(void);
 
 
 #define SWAPFILE_FILENAME "SWAPFILE"
-#define SWAPFILE_PAGES (((8 * 1024 * 1024) / PGSIZE) - 1)
+//#define SWAPFILE_PAGES (((8 * 1024 * 1024) / PGSIZE) - 1)
+//#define SWAPFILE_PAGES (((1 * 1024 * 1024) / PGSIZE) - 1)
+#define SWAPFILE_PAGES 15
 #define MAX_SWAP_BADPAGES (PGIZE - 1024 - 512 - 10) / sizeof(long)
 
 /* From Linux 2.4 source code */

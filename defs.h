@@ -202,6 +202,9 @@ void            kswapd(void);
 void            kswapinit(void);
 unsigned int    swap_page_total_count(void);
 unsigned int 	swap_page_count(void);
+int             swap_in(void*, unsigned int);
+void            free_swap_pages(struct proc*);
+unsigned int    swap_refcount(unsigned long);
 unsigned int    *get_victim_page(unsigned int*);
 void            ksetswapfileptr(struct file*);
 

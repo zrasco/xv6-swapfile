@@ -61,19 +61,29 @@ void kswapinit()
 		// In this case we have the range for the swap map allocated from 0x804FC000 to 0x804FFFFF for a total of 16k
 
 		char *new_kalloc_page = kalloc();
+		memset(new_kalloc_page,0,PGSIZE);
 		cprintf("kernel: Allocating page for swap map at address 0x%p\n",new_kalloc_page);
 		
 		if (x == swap_info[0].swap_map_pages - 1)
 		{
 			// Allocate & zero out this section of the map
 			swap_info[0].swap_map = (unsigned short*)new_kalloc_page;
-			memset(new_kalloc_page,0,PGSIZE);
 
 			cprintf("kernel: Swap map pointer set to address 0x%p\n",new_kalloc_page);
 		}
 	}
 	
 	cprintf("kernel: Done initializing swap info\n");
+}
+
+void print_swap_map()
+{
+	cprintf("Swap map(lb==%d, hb==%d):\n",swap_info[0].lowest_bit,swap_info[0].highest_bit);
+
+	for (int x = 0; x < SWAPFILE_PAGES; x++)
+		cprintf("%d ",swap_info[0].swap_map[x]);
+
+	cprintf("\n");
 }
 
 void kswapd()
@@ -94,6 +104,47 @@ unsigned int swap_page_total_count()
 unsigned int swap_page_count()
 {
   return swap_info[0].pages;
+}
+
+inline unsigned int swap_refcount(unsigned long offset)
+{
+	if (offset > SWAPFILE_PAGES)
+		panic("swap_refcount");
+
+	return swap_info[0].swap_map[offset];
+}
+
+int swap_entry_free(struct swap_info_struct *p, unsigned long offset)
+{
+	int count = p->swap_map[offset];
+
+	if (count < SWAP_MAP_MAX) {
+		count--;
+		p->swap_map[offset] = count;
+		if (!count) {
+			if (offset < p->lowest_bit)
+				p->lowest_bit = offset;
+			if (offset > p->highest_bit)
+				p->highest_bit = offset;
+			p->pages++;
+		}
+	}
+	return count;
+}
+
+void swap_free(swp_entry_t entry)
+{
+	struct swap_info_struct * p = &swap_info[0];
+
+	swap_list_lock();	
+	swap_entry_free(p, SWP_OFFSET(entry));
+	swap_list_unlock();
+}
+
+void swap_free_nolocks(swp_entry_t entry)
+// WARNING: Make sure to protect this call with locks!
+{
+	swap_entry_free(&swap_info[0], SWP_OFFSET(entry));
 }
 
 unsigned int *get_victim_page(unsigned int *proc_addr)
@@ -137,6 +188,46 @@ unsigned int *get_victim_page(unsigned int *proc_addr)
   return 0;
 }
 
+void free_swap_pages(struct proc *currproc)
+// Frees all swap pages 
+{
+  print_swap_map();
+  swap_list_lock();
+
+  for (int index1 = 0; index1 < NPDENTRIES; index1++)
+  // Page tables have two tiers. Traverse tier 1, the page directory
+  {
+    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
+    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
+    //
+    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
+    pde_t *pde = &(currproc->pgdir[index1]);
+
+    if (*pde & PTE_P && index1 < 512)
+    // Page directory
+    {
+      // Now traverse through second tier, the page table corresponding to the page directory entry above
+      // This page table is full of PTEs, each of which can address 4KB
+      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+      for (int index2 = 11; index2 < NPTENTRIES; index2++)
+      {
+        if (!(pgtab[index2] & PTE_P))
+        {
+		  // Check if this page is swapped out
+		  swp_entry_t this_entry = pte_to_swp_entry(pgtab[index2]);
+		  uint offset = SWP_OFFSET(this_entry);
+
+		  if (offset <= SWAPFILE_PAGES && swap_info[0].swap_map[offset] != 0)
+			swap_free_nolocks(this_entry);
+        }
+      }
+    }
+  }
+
+  swap_list_unlock();
+}
+
 int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 // My own method (basically add_to_swap_cache() without the cache)
 {
@@ -149,8 +240,8 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	// SWAPFILE pointer not set yet with ksetswapfileptr() system call
 		return -1;
 
-	cprintf("Writing page located at 0x%p to file with file pointer at address 0x%p from bytes %d to %d\n",
-						kernel_addr,p->swap_file,(file_offset * PGSIZE), (file_offset * PGSIZE) + PGSIZE);
+	//cprintf("Writing page located at 0x%p to file with file pointer at address 0x%p from bytes %d to %d\n",
+	//					kernel_addr,p->swap_file,(file_offset * PGSIZE), (file_offset * PGSIZE) + PGSIZE);
 
 	old_offset = p->swap_file->off;
 	
@@ -161,13 +252,13 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	swap_device_lock(p);
 	*/
 
+	// Quick and dirty hack for now. Need a lock-protected state variable later
+	myproc()->pages_swapped_out++;
+
 	// Write contents to swapfile
 	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
   	retval = filewrite(p->swap_file,kernel_addr,PGSIZE);
   	p->swap_file->off = old_offset;
-
-	// Update swap reference counter
-	p->swap_map[offset]++;
 
 	/*
 	cprintf("Before dev unlock\n");
@@ -175,6 +266,30 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	cprintf("Before list unlock\n");
 	swap_list_unlock();
 	*/
+
+	return retval;
+}
+
+int swap_in(void *page_addr, unsigned int offset)
+// My own method. Swap a page into main memory from the specified slot
+{
+	struct swap_info_struct *p = &swap_info[0];
+	int file_offset = offset + 1, retval = -1;
+	uint old_offset;
+
+	if (p->swap_file == NULL)
+	// SWAPFILE pointer not set yet with ksetswapfileptr() system call
+		return -1;
+
+	old_offset = p->swap_file->off;
+
+	// Quick and dirty hack for now. Need a lock-protected state variable later
+	myproc()->pages_swapped_out--;
+
+	// Read contents from swapfile
+	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
+  	retval = fileread(p->swap_file,page_addr,PGSIZE);
+  	p->swap_file->off = old_offset;
 
 	return retval;
 }
@@ -299,7 +414,7 @@ inline int scan_swap_map(struct swap_info_struct *si)
 			si->highest_bit = 0;
 		}
 		si->swap_map[offset] = 1;
-		swap_info[0].pages--;
+		si->pages--;
 		si->cluster_next = offset+1;
 		return offset;
 	}

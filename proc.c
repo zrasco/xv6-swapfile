@@ -243,6 +243,9 @@ exit(void)
     }
   }
 
+  // Free swap pages
+  free_swap_pages(curproc);
+
   begin_op();
   iput(curproc->cwd);
   end_op();

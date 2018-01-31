@@ -51,6 +51,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  uint pages_swapped_out;      // Statistic of # of pages swapped out of process memory over its lifetime
 };
 
 // Process memory is laid out contiguously, low addresses first:

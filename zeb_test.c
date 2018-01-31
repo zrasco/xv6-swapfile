@@ -28,7 +28,7 @@ int myAtoi(char *str)
 
 int main(int argc, char *argv [])
 {
-  char *victim_addr = (char*)0x0000C000;
+  char *victim_addr = (char*)0x0000C008;
   char *alloc_addr = NULL;
   alloc_addr = alloc_addr;
   //char ch;
@@ -71,7 +71,20 @@ int main(int argc, char *argv [])
     char *alloc_addr = malloc(4096-8);
 
     if (x == 15)
+    {
+      *victim_addr = 'Z';
       pgtabinfo();
+    }
+      
+    else if (x == 939)
+    {
+      // Our pet victim page should be swapped out by now
+      printf(1,"Reading from victim area\n");
+      char ch = *victim_addr;
+
+      ch = ch * 1;
+      printf(1,"Done reading from victim area. Value==%d\n",ch);
+    }
     if (alloc_addr == NULL)
       break;
     else

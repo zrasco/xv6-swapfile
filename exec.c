@@ -102,6 +102,7 @@ exec(char *path, char **argv)
   curproc->page_fault_cnt = 0;    // Page fault count
   curproc->tf->eip = elf.entry;   // main
   curproc->tf->esp = sp;
+  curproc->pages_swapped_out = 0; // Pages swapped out count
   //cprintf("stack pointer: sp=0x%p\n",sp);
   switchuvm(curproc);
   freevm(oldpgdir);
