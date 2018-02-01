@@ -56,7 +56,7 @@ trap(struct trapframe *tf)
   else if (tf->trapno == T_ILLOP && tf->err == 0)
   // This happens when doing a NULL-reference in user mode
   {
-    cprintf("Segmentation fault from instruction address 0x%p accessing address 0x%p. Terminating program!\n",tf->eip,rcr2());
+    cprintf("Segmentation fault from instruction address 0x%p accessing address 0x%p. Terminating program [%s]!\n",tf->eip,rcr2(),myproc()->name);
     myproc()->killed = 1;
     exit();
   }
@@ -129,7 +129,7 @@ trap(struct trapframe *tf)
       // TODO: Still iffy about this logic, test some more!
       if (fault_addr > currproc->sz || (pte != NULL && ((*pte & PTE_P) && !(*pte & PTE_U))))
       {
-        cprintf("Segmentation fault from instruction address 0x%p accessing address 0x%p. Terminating program!\n",tf->eip,fault_addr);
+        cprintf("Segmentation fault from instruction address 0x%p accessing address 0x%p. Terminating program [%s, pid==%d]!\n",tf->eip,fault_addr,currproc->name,currproc->pid);
         if (pte != NULL)
           *pte |= PTE_U;
 

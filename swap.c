@@ -117,6 +117,20 @@ inline unsigned int swap_refcount(unsigned long offset)
 	return swap_info[0].swap_map[offset];
 }
 
+int swap_duplicate(swp_entry_t entry)
+{
+	unsigned int offset = SWP_OFFSET(entry);
+
+	if (offset > SWAPFILE_PAGES)
+		panic("swap_duplicate");
+	
+	swap_list_lock();
+	++swap_info[0].swap_map[offset];	
+	swap_list_unlock();
+
+	return swap_info[0].swap_map[offset];
+}
+
 int swap_entry_free(struct swap_info_struct *p, unsigned long offset)
 {
 	int count = p->swap_map[offset];
@@ -136,19 +150,22 @@ int swap_entry_free(struct swap_info_struct *p, unsigned long offset)
 	return count;
 }
 
-void swap_free(swp_entry_t entry)
+int swap_free(swp_entry_t entry)
 {
+	int retval = 0;
 	struct swap_info_struct * p = &swap_info[0];
 
-	swap_list_lock();	
-	swap_entry_free(p, SWP_OFFSET(entry));
+	swap_list_lock();
+	retval = swap_entry_free(p, SWP_OFFSET(entry));
 	swap_list_unlock();
+
+	return retval;
 }
 
-void swap_free_nolocks(swp_entry_t entry)
+int swap_free_nolocks(swp_entry_t entry)
 // WARNING: Make sure to protect this call with locks!
 {
-	swap_entry_free(&swap_info[0], SWP_OFFSET(entry));
+	return swap_entry_free(&swap_info[0], SWP_OFFSET(entry));
 }
 
 unsigned int *get_victim_page(unsigned int *proc_addr)
@@ -209,14 +226,16 @@ void free_swap_pages(struct proc *currproc)
 
       for (int index2 = 11; index2 < NPTENTRIES; index2++)
       {
-        if (!(pgtab[index2] & PTE_P))
+        if (!(pgtab[index2] & PTE_P) && (pgtab[index2] & PTE_U))
         {
-					// Check if this page is swapped out
-					swp_entry_t this_entry = pte_to_swp_entry(pgtab[index2]);
-					uint offset = SWP_OFFSET(this_entry);
+			// Check if this page is swapped out
+			swp_entry_t this_entry = pte_to_swp_entry(pgtab[index2]);
+			uint offset = SWP_OFFSET(this_entry);
 
-					if (offset < SWAPFILE_PAGES && swap_info[0].swap_map[offset] != 0)
-					swap_free_nolocks(this_entry);
+			if (offset < SWAPFILE_PAGES && swap_info[0].swap_map[offset] != 0)
+			{
+				cprintf("process [%s] exiting. freeing slot entry %d. New refcount==%d\n",currproc->name,offset,swap_free_nolocks(this_entry));
+			}
         }
       }
     }

@@ -28,6 +28,7 @@ int uptime(void);
 int vminfo(struct vminfo_struct*);
 int pgtabinfo(void);
 int setswapfilefd(int fd);
+char *sbrk_force_swapout(int);
 
 // ulib.c
 int stat(char*, struct stat*);

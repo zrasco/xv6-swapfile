@@ -6,9 +6,16 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "spinlock.h"
+#include "swap.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
+
+
+// swap.c
+int swap_duplicate(swp_entry_t);
+int swap_free(swp_entry_t);
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
@@ -328,18 +335,63 @@ copyuvm(pde_t *pgdir, uint sz)
 
   if((d = setupkvm()) == 0)
     return 0;
+
+  //cprintf("copyuvm: sz==%d\n",sz);
   for(i = 0; i < sz; i += PGSIZE){
+
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
+
+    //cprintf("pte #%d location=0x%p\nPTE flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n", i / PGSIZE,
+    //        pte,*pte & PTE_P,*pte & PTE_U, *pte & PTE_W,*pte & PTE_D);
+
+    // The pages within the process boundary not being present isn't an issue since we have lazy allocation and swapping
+    // Instead, we'll only kalloc() if the page is present
+    //
+    //if(!(*pte & PTE_P))
+    //  panic("copyuvm: page not present");
+
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
-      goto bad;
+
+    if (*pte & PTE_P)
+    {
+      // Only copy pages if present. If the page is swapped, increment the reference counter
+      if((mem = kalloc()) == 0)
+        goto bad;
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
+        goto bad;
+    }
+    else
+    {
+      // Check for swapped page. If we have one, increment the reference counter
+      if (*pte & PTE_U)
+      {
+        // Possibly have an access request to a swapped-out page
+        swp_entry_t entry = pte_to_swp_entry(*pte);
+        uint offset = SWP_OFFSET(entry);
+        uint refcount = swap_refcount(offset);
+
+          if (refcount > 0)
+          {
+            refcount = swap_duplicate(entry);
+            //cprintf("copyuvm: copying swapped page in process address 0x%p, slot %d. new ref count: %d\n",i,offset,refcount);
+
+            // Very likely this page is swapped out. Copy the PTE to the new process
+            if(mappages(d, (void*)i, PGSIZE, offset, flags) < 0)
+              goto bad;
+            else
+            {
+              pte_t *newpte = walkpgdir(d,(void*)i,0);
+              //cprintf("copyuvm: mappages() succeeded in swap branch. Adjusting page table entry\n");
+
+              // The old PTE is exactly what we need so just copy it
+              *newpte = *pte;
+            }
+          }
+      }
+    }
   }
   return d;
 
@@ -485,13 +537,24 @@ int pgtabinfo_internal(void)
             kphyspages++;
         }
 
-        if (index1 < 512 && index2 < 100)
+        if (index1 < 512 && index2 < 20)
         {
           cprintf("PTE #%d(at addr 0x%p): va: 0x%p. Flags: PTE_U=%d PTE_P=%d,PTE_W=%d,PTE_D=%d\n",
           index2,&pgtab[index2],PGADDR(index1,index2,0),pgtab[index2] & PTE_U,pgtab[index2] & PTE_P, pgtab[index2] & PTE_W, pgtab[index2] & PTE_D);
 
           if (pgtab[index2] & PTE_P)
             cprintf("PTE #%d: points to address: 0x%p\n",index2,PTE_ADDR(pgtab[index2]));
+          else if (pgtab[index2] & PTE_U)
+          {
+            // Check if this is a swapped out page
+            swp_entry_t entry = pte_to_swp_entry(pgtab[index2]);
+            uint offset = SWP_OFFSET(entry);
+            uint refcount = swap_refcount(offset);
+
+            if (refcount > 0)
+              // Very likely this is a swapped out page
+              cprintf("PTE #%d: swapped out to slot %d, ref count: %d\n",index2,offset,refcount);
+          }
         }
       }
 

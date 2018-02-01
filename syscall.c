@@ -106,6 +106,7 @@ extern int sys_uptime(void);
 extern int sys_vminfo(void);
 extern int sys_pgtabinfo(void);
 extern int sys_setswapfilefd(void);
+extern int sys_sbrk_force_swapout(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -131,7 +132,8 @@ static int (*syscalls[])(void) = {
 [SYS_close]   sys_close,
 [SYS_vminfo]  sys_vminfo,
 [SYS_pgtabinfo]   sys_pgtabinfo,
-[SYS_setswapfilefd] sys_setswapfilefd
+[SYS_setswapfilefd] sys_setswapfilefd,
+[SYS_sbrk_force_swapout] sys_sbrk_force_swapout
 };
 
 void

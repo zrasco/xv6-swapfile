@@ -76,6 +76,7 @@ uint 			kfreepagecnt1(void);
 uint 			kallocatedpages(void);
 uint 			kallocbeginning(void);
 struct run 		*kgetfreelistptr(void);
+char            *invoke_swapper(void);
 
 // kbd.c
 void            kbdintr(void);

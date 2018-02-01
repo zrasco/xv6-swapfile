@@ -77,6 +77,14 @@ sys_sbrk(void)
 }
 
 int
+sys_sbrk_force_swapout(void)
+{
+  invoke_swapper();
+
+  return sys_sbrk();
+}
+
+int
 sys_sleep(void)
 {
   int n;

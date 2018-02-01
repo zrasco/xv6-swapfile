@@ -23,3 +23,4 @@
 #define SYS_vminfo		22
 #define SYS_pgtabinfo	23
 #define SYS_setswapfilefd   24
+#define SYS_sbrk_force_swapout 25
