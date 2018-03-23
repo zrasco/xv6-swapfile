@@ -440,3 +440,32 @@ inline int scan_swap_map(struct swap_info_struct *si)
 	si->highest_bit = 0;
 	return 0;
 }
+
+// LRU section
+
+
+void lru_cache_add(struct page * page)
+// Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
+// if the page is known to be hot, such as when a page is faulted in.
+{
+
+}
+void lru_cache_del(struct page *page)
+// Removes a page from the LRU lists by calling either del_page_from_active_list()
+// or del_page_from_inactive_list(), whichever is appropriate.
+{
+
+}
+void mark_page_accessed(struct page *page)
+// Mark that the page has been accessed. If it was not recently referenced
+// (in the inactive_list and PG_referenced flag not set), the referenced flag is set.
+// If it is referenced a second time, activate_page() is called, which marks the page hot, and the referenced flag is cleared
+{
+
+}
+void activate_page(struct page * page)
+// Removes a page from the inactive_list and places it on active_list. 
+// It is very rarely called directly as the caller has to know the page is on inactive_list. mark_page_accessed() should be used instead
+{
+
+}

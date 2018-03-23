@@ -97,7 +97,6 @@ main(int argc, char *argv[]){
 	pgtabinfo();
 	printf(1, "Called sbrk(PGSIZE) 12 times - all physical pages taken.\nPress any key...\n");
 	gets(input, 10);
-	exit();
 
 	/*
 	Allocate page 15.
@@ -105,7 +104,7 @@ main(int argc, char *argv[]){
 	to user space, a PGFLT would occur and pages 0,1 will be hot-swapped.
 	Afterwards, page 1 is in the swap file, the rest are in memory.
 	*/
-	arr[12] = sbrk(PGSIZE);
+	arr[12] = sbrk_force_swapout(PGSIZE);
 	printf(1, "arr[12]=0x%x\n", arr[12]);
 	printf(1, "Called sbrk(PGSIZE) for the 13th time, a page fault should occur and one page in swap file.\nPress any key...\n");
 	gets(input, 10);
