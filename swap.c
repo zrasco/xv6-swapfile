@@ -25,6 +25,7 @@ struct spinlock swaplock;
 // Forward declarations
 swp_entry_t get_swap_page(void);
 int scan_swap_map(struct swap_info_struct*);
+void lru_list_initialize();
 
 #define SWAPFILE_CLUSTER 16
 //#define SWAPFILE_CLUSTER 3
@@ -75,6 +76,8 @@ void kswapinit()
 			cprintf("kernel: Swap map pointer set to address 0x%p\n",new_kalloc_page);
 		}
 	}
+
+	lru_list_initialize();
 	
 	cprintf("kernel: Done initializing swap info\n");
 }
@@ -442,28 +445,200 @@ inline int scan_swap_map(struct swap_info_struct *si)
 }
 
 // LRU section
+struct lru_list_entry {
+	pte_t addr;
+	struct lru_list_entry *next;
+};
 
+struct lru_list_struct {
+	struct lru_list_entry *active_list;
+	struct lru_list_entry *inactive_list;
+};
 
-void lru_cache_add(struct page * page)
-// Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
-// if the page is known to be hot, such as when a page is faulted in.
+// Note that we can have a large number of entries in the LRU list, which may overflow the kernel stack.
+// As a result, we need a subsystem to manage the doling out of LRU entries to be used, which we will dub the LRU bank
+
+// Needed to figure out how many pages to allocate for LRU list bank
+// Assume 12 bytes for header (prev & next pointers and count)
+#define LRU_HEADER_SIZE 12
+#define LRU_ENTRIES_PER_PAGE ((PGSIZE - LRU_HEADER_SIZE) / sizeof(struct lru_list_entry))
+
+struct lru_bank_page {
+	// Contains blocks of LRU entries to be given out when needed
+	struct lru_bank_page *prev;
+	struct lru_bank_page *next;
+	unsigned int used;
+
+	struct lru_list_entry slots[LRU_ENTRIES_PER_PAGE];
+};
+
+// Main container for LRU lists
+struct lru_list_struct lru_list;
+struct lru_bank_page *lru_bank;
+
+void lru_list_initialize()
 {
+	cprintf("kernel: Initializing LRU list container.\n");
+
+	lru_bank = (struct lru_bank_page*)kalloc();
+
+	if (!lru_bank)
+		panic("Unable to allocate LRU bank!");
+	
+	memset(lru_bank,0,sizeof(struct lru_bank_page));
+
+	cprintf("kernel: First page of LRU entry bank created at 0x%p\n", lru_bank);
+
+	cprintf("kernel: Initializing LRU active & inactive lists\n", lru_bank);
+	lru_list.active_list = NULL;
+	lru_list.inactive_list = NULL;
+
+	cprintf("kernel: LRU entries per page: %d\n", LRU_ENTRIES_PER_PAGE);
+}
+
+struct lru_bank_page *lru_bank_current()
+{
+	struct lru_bank_page *retval = lru_bank;
+
+	while (retval->next)
+		retval = retval->next;
+
+	return retval;
+}
+
+struct lru_list_entry *lru_bank_get_new()
+// Returns a fresh LRU entry to be used
+{
+	// Temporarily just grab a new one to test the LRU system
+	// I'll add a more sophisticated system later!
+
+	struct lru_list_entry *retval = NULL;
+	struct lru_bank_page *lb_curr = lru_bank_current();
+
+	if (lb_curr->used < LRU_ENTRIES_PER_PAGE)
+	{
+		// Take an entry from the current page
+		retval = &lb_curr->slots[lb_curr->used];
+		lb_curr->used++;
+	}
+	else
+	{
+		// Not implemented just yet, but would kalloc and add another page to the bank. Panic for now
+		panic("lru_bank_get_new()");
+	}
+
+	retval->addr = 0;
+	retval->next = NULL;
+	return retval;
+	
+}
+
+void lru_bank_release(struct lru_list_entry *target);
+
+void lru_cache_add(pte_t addr, int pageHot)
+// Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
+// if the page is known to be hot, such as when a page is faulted in (pageHot > 0).
+{
+	struct lru_list_entry *new_entry = lru_bank_get_new();
+	struct lru_list_entry *curr;
+
+	if (pageHot <= 0)
+	{
+		// Page isn't known to be hot. Move to end of inactive list
+		curr = lru_list.inactive_list;
+
+		// Add entry to end of inactive list
+		if (lru_list.inactive_list == NULL)
+			lru_list.inactive_list = new_entry;
+		else
+		{
+			while (curr->next)
+				curr = curr->next;
+
+			curr->next = new_entry;
+		}
+
+		new_entry->addr = addr;
+	}
+	else
+	{
+		// Since we know the page is hot, put it in the front of the active list right now
+		new_entry->next = lru_list.active_list;
+		lru_list.active_list = new_entry;
+	}
 
 }
-void lru_cache_del(struct page *page)
+void lru_cache_del(pte_t addr)
 // Removes a page from the LRU lists by calling either del_page_from_active_list()
 // or del_page_from_inactive_list(), whichever is appropriate.
 {
+	// Search active list...
+	struct lru_list_entry *curr = lru_list.active_list;
+	struct lru_list_entry *prev = curr;
 
+	if (curr != NULL)
+	{
+		// Check if the first entry is the target
+		if (curr->addr == addr)
+		{
+			lru_list.active_list = curr->next;
+			lru_bank_remove(curr);
+			return;
+		}
+
+		// Remove entry from the list
+		while (curr->next)
+		{
+			prev = curr;
+			curr = curr->next;
+
+			if (curr->addr == addr)
+			{
+				prev->next = curr->next;
+				lru_bank_remove(curr);
+				return;
+			}
+		}
+	}
+
+	// Search inactive list...
+	curr = lru_list.inactive_list;
+	prev = curr;
+
+	if (curr != NULL)
+	{
+		// Check if the first entry is the target
+		if (curr->addr == addr)
+		{
+			lru_list.active_list = curr->next;
+			lru_bank_remove(curr);
+			return;
+		}
+
+		// Remove entry from the list
+		while (curr->next)
+		{
+			prev = curr;
+			curr = curr->next;
+
+			if (curr->addr == addr)
+			{
+				prev->next = curr->next;
+				lru_bank_remove(curr);
+				return;
+			}
+		}
+	}	
 }
-void mark_page_accessed(struct page *page)
+
+void mark_page_accessed(pte_t addr)
 // Mark that the page has been accessed. If it was not recently referenced
 // (in the inactive_list and PG_referenced flag not set), the referenced flag is set.
 // If it is referenced a second time, activate_page() is called, which marks the page hot, and the referenced flag is cleared
 {
 
 }
-void activate_page(struct page * page)
+void activate_page(pte_t addr)
 // Removes a page from the inactive_list and places it on active_list. 
 // It is very rarely called directly as the caller has to know the page is on inactive_list. mark_page_accessed() should be used instead
 {
