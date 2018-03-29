@@ -26,6 +26,7 @@ struct spinlock swaplock;
 swp_entry_t get_swap_page(void);
 int scan_swap_map(struct swap_info_struct*);
 void lru_list_initialize();
+void lru_cache_del(pte_t, uint);
 
 #define SWAPFILE_CLUSTER 16
 //#define SWAPFILE_CLUSTER 3
@@ -218,7 +219,7 @@ void free_swap_pages(struct proc *currproc)
   //print_swap_map();
   swap_list_lock();
 
-	// Standard page directory crawl
+  // Standard page directory crawl
   for (int index1 = 0; index1 < NPDENTRIES; index1++)
   {
     pde_t *pde = &(currproc->pgdir[index1]);
@@ -226,6 +227,9 @@ void free_swap_pages(struct proc *currproc)
     if (*pde & PTE_P && index1 < 512)
     {
       pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+	  lru_cache_del((uint)pgtab,PGSIZE);
+	  cprintf("kernel: proc exit crawl. pgtab addr: 0x%p\n",pgtab);
 
       for (int index2 = 11; index2 < NPTENTRIES; index2++)
       {
@@ -474,7 +478,7 @@ struct lru_bank_page {
 
 // Main container for LRU lists
 struct lru_list_struct lru_list;
-struct lru_bank_page *lru_bank;
+struct lru_bank_page *lru_bank = NULL;
 
 void lru_list_initialize()
 {
@@ -500,8 +504,12 @@ struct lru_bank_page *lru_bank_current()
 {
 	struct lru_bank_page *retval = lru_bank;
 
+	//cprintf("kernel: lru_bank_current(), lru_bank==0x%p\n",lru_bank);
+
 	while (retval->next)
 		retval = retval->next;
+
+	//cprintf("kernel: lru_bank_current(), returning 0x%p\n",retval);
 
 	return retval;
 }
@@ -509,31 +517,94 @@ struct lru_bank_page *lru_bank_current()
 struct lru_list_entry *lru_bank_get_new()
 // Returns a fresh LRU entry to be used
 {
-	// Temporarily just grab a new one to test the LRU system
-	// I'll add a more sophisticated system later!
-
 	struct lru_list_entry *retval = NULL;
 	struct lru_bank_page *lb_curr = lru_bank_current();
+	struct lru_bank_page *lb_last = NULL;
 
-	if (lb_curr->used < LRU_ENTRIES_PER_PAGE)
+	//cprintf("kernel: lru_bank_get_new(): Before while loop\n");
+	//cprintf("kernel: lru_bank_get_new(): lb_curr==0x%p\n",lb_curr);
+	//cprintf("kernel: lru_bank_get_new(): lb_curr->next==0x%p\n",lb_curr->next);
+
+	while (lb_curr)
 	{
-		// Take an entry from the current page
-		retval = &lb_curr->slots[lb_curr->used];
+		uint exit = 0;
+
+		if (lb_curr->used < LRU_ENTRIES_PER_PAGE)
+		{
+			// Take an entry from the current page
+			for (int x = 0; x < LRU_ENTRIES_PER_PAGE; x++)
+			{
+				if (lb_curr->slots[x].addr == 0)
+				// Found free entry
+					retval = &lb_curr->slots[x];
+					lb_curr->used++;
+					exit = 1;
+					break;
+			}
+		}
+
+		if (exit > 0)
+			break;
+
+		// No free entries found. Try next page
+		lb_last = lb_curr;
+		lb_curr = lb_curr->next;
+	}
+
+	//cprintf("kernel: lru_bank_get_new(): After while loop\n");
+
+	if (retval == NULL)
+	// All LRU entries in all currently allocated bank pages are in use. Create a new bank page
+	{
+		if (lb_last == NULL)
+			panic("lru_bank_get_new(): lb_last != NULL assertion failed");
+
+		// Create new bank page
+		lb_curr = lb_last->next = (struct lru_bank_page*)kalloc();
+		lb_curr->prev = lb_last;
+		memset(lb_curr,0,PGSIZE);
+
+		// Assign new LRU item
+		retval = &lb_curr->slots[0];
 		lb_curr->used++;
 	}
-	else
-	{
-		// Not implemented just yet, but would kalloc and add another page to the bank. Panic for now
-		panic("lru_bank_get_new()");
-	}
+
+	cprintf("kernel: Got new LRU entry at address 0x%p\n",&retval);
 
 	retval->addr = 0;
 	retval->next = NULL;
 	return retval;
-	
 }
 
-void lru_bank_release(struct lru_list_entry *target);
+struct lru_bank_page *lru_bank_find_page(struct lru_list_entry *entry)
+// Finds the LRU bank page of the associated entry. Should never return NULL
+{
+	struct lru_bank_page *retval = NULL;
+	struct lru_bank_page *currpg = lru_bank;
+
+	while (currpg && retval == NULL)
+	{
+		if ((uint)entry >= (uint)currpg && (uint)entry < (uint)currpg + PGSIZE)
+			retval = currpg;
+
+		currpg = currpg->next;
+	}
+
+	return retval;
+}
+
+void lru_bank_release(struct lru_list_entry *target)
+// Removes target entry from the LRU bank
+{
+	struct lru_bank_page *currpg = lru_bank_find_page(target);
+	
+	if (currpg == NULL)
+		panic("lru_bank_release()");
+	
+	// Blank out this LRU entry and free it for use
+	target->addr = 0;
+	currpg->used--;
+}
 
 void lru_cache_add(pte_t addr, int pageHot)
 // Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
@@ -541,6 +612,8 @@ void lru_cache_add(pte_t addr, int pageHot)
 {
 	struct lru_list_entry *new_entry = lru_bank_get_new();
 	struct lru_list_entry *curr;
+
+	cprintf("kernel: lru_cache_add(): new_entry==0x%p\n",new_entry);
 
 	if (pageHot <= 0)
 	{
@@ -563,14 +636,16 @@ void lru_cache_add(pte_t addr, int pageHot)
 	else
 	{
 		// Since we know the page is hot, put it in the front of the active list right now
+		new_entry->addr = addr;		
 		new_entry->next = lru_list.active_list;
 		lru_list.active_list = new_entry;
 	}
 
 }
-void lru_cache_del(pte_t addr)
+void lru_cache_del(pte_t addr, uint rangeSize)
 // Removes a page from the LRU lists by calling either del_page_from_active_list()
 // or del_page_from_inactive_list(), whichever is appropriate.
+// The parameter rangeSize deletes all addresses between (addr) and (addr + rangeSize). Set rangeSize to 0 to specify a single address
 {
 	// Search active list...
 	struct lru_list_entry *curr = lru_list.active_list;
@@ -579,24 +654,31 @@ void lru_cache_del(pte_t addr)
 	if (curr != NULL)
 	{
 		// Check if the first entry is the target
-		if (curr->addr == addr)
+		if (curr->addr >= addr && curr->addr <= (addr + rangeSize))
 		{
 			lru_list.active_list = curr->next;
-			lru_bank_remove(curr);
-			return;
+			cprintf("kernel: Removing LRU entry from active list for PTE at kernel address 0x%p\n",curr->addr);
+			lru_bank_release(curr);
+			
+			if (rangeSize == 0)
+				return;
 		}
 
 		// Remove entry from the list
 		while (curr->next)
 		{
 			prev = curr;
-			curr = curr->next;
+			curr = curr->next;			
 
-			if (curr->addr == addr)
+			if (curr->addr >= addr && curr->addr <= (addr + rangeSize))
 			{
 				prev->next = curr->next;
-				lru_bank_remove(curr);
-				return;
+				cprintf("kernel: Removing LRU entry from active list for PTE at kernel address 0x%p\n",curr->addr);
+				lru_bank_release(curr);
+				curr = prev->next;
+
+				if (rangeSize == 0)
+					return;
 			}
 		}
 	}
@@ -608,11 +690,14 @@ void lru_cache_del(pte_t addr)
 	if (curr != NULL)
 	{
 		// Check if the first entry is the target
-		if (curr->addr == addr)
+		if (curr->addr >= addr && curr->addr <= (addr + rangeSize))
 		{
 			lru_list.active_list = curr->next;
-			lru_bank_remove(curr);
-			return;
+			cprintf("kernel: Removing LRU entry from inactive list for PTE at kernel address 0x%p\n",curr->addr);
+			lru_bank_release(curr);
+
+			if (rangeSize == 0)
+				return;
 		}
 
 		// Remove entry from the list
@@ -621,11 +706,15 @@ void lru_cache_del(pte_t addr)
 			prev = curr;
 			curr = curr->next;
 
-			if (curr->addr == addr)
+			if (curr->addr >= addr && curr->addr <= (addr + rangeSize))
 			{
 				prev->next = curr->next;
-				lru_bank_remove(curr);
-				return;
+				cprintf("kernel: Removing LRU entry from inactive list for PTE at kernel address 0x%p\n",curr->addr);
+				lru_bank_release(curr);
+				curr = prev->next;
+
+				if (rangeSize == 0)
+					return;
 			}
 		}
 	}	
@@ -636,6 +725,7 @@ void mark_page_accessed(pte_t addr)
 // (in the inactive_list and PG_referenced flag not set), the referenced flag is set.
 // If it is referenced a second time, activate_page() is called, which marks the page hot, and the referenced flag is cleared
 {
+
 
 }
 void activate_page(pte_t addr)

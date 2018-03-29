@@ -21,6 +21,7 @@ pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // From swap.c
 void swap_free(swp_entry_t);
+void lru_cache_add(pte_t*, int);
 
 void
 tvinit(void)
@@ -229,6 +230,11 @@ trap(struct trapframe *tf)
 
             // Increase count of pages "actually" allocated
             currproc->phys_sz += PGSIZE;
+
+            // Add this page to the LRU cache
+            cprintf("kernel: Adding pte at kernel address 0x%p to LRU cache\n",pte);
+            lru_cache_add(pte, 1);
+            
             //cprintf("Lazy allocation succeeded for address 0x%p(kalloc'ed 0x%p) for process [%s]\n", fault_page, mem, currproc->name);
             //cprintf("uva2ka==0x%p\n",uva2ka(currproc->pgdir,(char*)fault_page));
 
