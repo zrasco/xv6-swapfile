@@ -458,6 +458,9 @@ struct lru_list_entry {
 struct lru_list_struct {
 	struct lru_list_entry *active_list;
 	struct lru_list_entry *inactive_list;
+	struct spinlock lru_lock;
+	unsigned long nr_active_pages;
+	unsigned long nr_inactive_pages;	
 };
 
 // Note that we can have a large number of entries in the LRU list, which may overflow the kernel stack.
@@ -479,6 +482,9 @@ struct lru_bank_page {
 
 // Main container for LRU lists
 struct lru_list_struct lru_list;
+#define lru_list_lock()     acquire(&lru_list.lru_lock);
+#define lru_list_unlock()   release(&lru_list.lru_lock);
+
 struct lru_bank_page *lru_bank = NULL;
 
 void lru_list_initialize()
@@ -497,6 +503,9 @@ void lru_list_initialize()
 	cprintf("kernel: Initializing LRU active & inactive lists\n", lru_bank);
 	lru_list.active_list = NULL;
 	lru_list.inactive_list = NULL;
+	lru_list.nr_active_pages = 0;
+	lru_list.nr_inactive_pages = 0;
+	initlock(&lru_list.lru_lock,"lru_lock");
 
 	cprintf("kernel: LRU entries per page: %d\n", LRU_ENTRIES_PER_PAGE);
 }
@@ -604,6 +613,8 @@ void lru_cache_add(pte_t addr, int pageHot)
 // Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
 // if the page is known to be hot, such as when a page is faulted in (pageHot > 0).
 {
+	lru_list_lock();
+
 	struct lru_list_entry *new_entry = lru_bank_get_new();
 	struct lru_list_entry *curr;
 
@@ -626,6 +637,7 @@ void lru_cache_add(pte_t addr, int pageHot)
 		}
 
 		new_entry->addr = addr;
+		lru_list.nr_inactive_pages++;
 	}
 	else
 	{
@@ -636,16 +648,22 @@ void lru_cache_add(pte_t addr, int pageHot)
 
 		// Clear accessed bit
 		pte_t *pte = (pte_t*)addr;
-		*pte &= ~PTE_A;		
+		*pte &= ~PTE_A;
+		
+		lru_list.nr_active_pages++;
 		
 		// *pte |= PTE_A; <----- Add accessed bit (reference purposes)
 	}
+
+	lru_list_unlock();
 }
 void lru_cache_del(pte_t addr, uint rangeSize)
 // Removes a page from the LRU lists by calling either del_page_from_active_list()
 // or del_page_from_inactive_list(), whichever is appropriate.
 // The parameter rangeSize deletes all addresses between (addr) and (addr + rangeSize). Set rangeSize to 0 to specify a single address
 {
+	lru_list_lock();
+
 	// Search active list...
 	struct lru_list_entry *curr = lru_list.active_list;
 	struct lru_list_entry *prev = curr;
@@ -674,14 +692,18 @@ void lru_cache_del(pte_t addr, uint rangeSize)
 		if (curr->addr >= addr && curr->addr <= ((uint)addr + rangeSize))
 		{
 			// Remove the entry
-			cprintf("kernel: Removing LRU entry 0x%p from active list\n",curr);
+			cprintf("kernel: Removing LRU entry for PTE at 0x%p from active list\n",*curr);
 			lru_bank_release(curr);
+			lru_list.nr_active_pages--;
 			
 			if (lru_list.active_list == curr)
 				lru_list.active_list = curr->next;
 
 			if (rangeSize == 0)
-				return;			
+			{
+				lru_list_unlock();
+				return;
+			}
 		}
 
 		curr = curr->next;
@@ -697,21 +719,25 @@ void lru_cache_del(pte_t addr, uint rangeSize)
 		if (curr->addr >= addr && curr->addr <= ((uint)addr + rangeSize))
 		{
 			// Remove the entry
-			cprintf("kernel: Removing LRU entry 0x%p from inactive list\n",curr);
+			cprintf("kernel: Removing LRU entry for PTE at 0x%p from inactive list\n",*curr);
 			lru_bank_release(curr);
+			lru_list.nr_inactive_pages--;
 			
 			if (lru_list.inactive_list == curr)
 				lru_list.inactive_list = curr->next;
 
 			if (rangeSize == 0)
-				return;			
+			{
+				lru_list_unlock();
+				return;
+			}
 		}
 
 		curr = curr->next;
 		prev->next = curr;
 	}
 
-
+	lru_list_unlock();
 	return;
 }
 
@@ -720,12 +746,44 @@ void mark_page_accessed(pte_t addr)
 // (in the inactive_list and PG_referenced flag not set), the referenced flag is set.
 // If it is referenced a second time, activate_page() is called, which marks the page hot, and the referenced flag is cleared
 {
-
-
+	pte_t *pte = (pte_t*)addr;
+	
+	if (*pte & PTE_A)
+	{
+		// Clear accessed bit and add to active list
+		*pte &= ~PTE_A;
+		activate_page(addr);
+	}
+	else
+		// Add accessed bit
+		*pte |= PTE_A;
 }
+
 void activate_page(pte_t addr)
 // Removes a page from the inactive_list and places it on active_list. 
 // It is very rarely called directly as the caller has to know the page is on inactive_list. mark_page_accessed() should be used instead
 {
+	lru_cache_del(addr,0);
+	lru_cache_add(addr,1);
+}
 
+void refill_inactive()
+// Simplified version of the refill_inactive() method on linux. Here, we do everything in this method.
+// Our goal is to make the active list comprise 2/3 of the total, and the inactive list the remaining 1/3
+{
+	unsigned long nr_pages = lru_list.nr_active_pages + lru_list.nr_inactive_pages;
+	unsigned long ratio = 0;
+	struct lru_list_entry *entry = lru_list.active_list;
+
+	// Get # of pages to move
+	ratio = (unsigned long) nr_pages * lru_list.nr_active_pages / ((lru_list.nr_inactive_pages + 1) * 2);
+
+	cprintf("kernel: refill_inactive() found %d \n",ratio);
+	cprintf("kernel: refill_inactive() moving %d pages from active to inactive list\n",ratio);
+
+	// Move the pages
+	while (ratio > 0)
+	{
+	}
+	
 }
