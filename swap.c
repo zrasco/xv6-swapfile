@@ -741,6 +741,14 @@ void lru_cache_del(pte_t addr, uint rangeSize)
 	return;
 }
 
+void activate_page(pte_t addr)
+// Removes a page from the inactive_list and places it on active_list. 
+// It is very rarely called directly as the caller has to know the page is on inactive_list. mark_page_accessed() should be used instead
+{
+	lru_cache_del(addr,0);
+	lru_cache_add(addr,1);
+}
+
 void mark_page_accessed(pte_t addr)
 // Mark that the page has been accessed. If it was not recently referenced
 // (in the inactive_list and PG_referenced flag not set), the referenced flag is set.
@@ -759,31 +767,42 @@ void mark_page_accessed(pte_t addr)
 		*pte |= PTE_A;
 }
 
-void activate_page(pte_t addr)
-// Removes a page from the inactive_list and places it on active_list. 
-// It is very rarely called directly as the caller has to know the page is on inactive_list. mark_page_accessed() should be used instead
-{
-	lru_cache_del(addr,0);
-	lru_cache_add(addr,1);
-}
-
 void refill_inactive()
 // Simplified version of the refill_inactive() method on linux. Here, we do everything in this method.
 // Our goal is to make the active list comprise 2/3 of the total, and the inactive list the remaining 1/3
 {
-	unsigned long nr_pages = lru_list.nr_active_pages + lru_list.nr_inactive_pages;
+	// nr_pages is the # of pages we want to swap out
+	unsigned long nr_pages = 1;
 	unsigned long ratio = 0;
 	struct lru_list_entry *entry = lru_list.active_list;
 
 	// Get # of pages to move
 	ratio = (unsigned long) nr_pages * lru_list.nr_active_pages / ((lru_list.nr_inactive_pages + 1) * 2);
 
-	cprintf("kernel: refill_inactive() found %d \n",ratio);
+	cprintf("kernel: refill_inactive() found: nr_pages==%d, active==%d, inactive==%d, ratio==%d \n",nr_pages,lru_list.nr_active_pages,lru_list.nr_inactive_pages,ratio);
 	cprintf("kernel: refill_inactive() moving %d pages from active to inactive list\n",ratio);
 
 	// Move the pages
-	while (ratio > 0)
+	while (ratio > 0 && entry != NULL)
 	{
+		// Check for pages which have been accessed
+		pte_t addr = entry->addr;
+		pte_t *pte = (pte_t*)entry->addr;
+
+		if (!(*pte & PTE_A))
+		{
+			lru_cache_del(addr,0);
+			lru_cache_add(addr,0);
+
+			// Add accessed bit
+			*pte |= PTE_A;
+		}
+		else
+		// Page is still hot, clear accessed bit & leave on accessed list
+			*pte &= ~PTE_A;
+
+		entry = entry->next;
+
 	}
 	
 }

@@ -9,6 +9,11 @@
 #define PGSIZE 4096
 #define DEBUG 0
 
+// Forward declarations
+void read_blocks();
+void sbrktest(void);
+void mem(void);
+void vminfo_printstats(struct vminfo_struct*);
 
 int
 testmain(void)
@@ -93,6 +98,12 @@ main(int argc, char *argv[]){
 		arr[i][0] = 0;
 		printf(1, "arr[%d]=0x%x\n", i, arr[i]);
 	}
+	struct vminfo_struct *myvminfo = malloc(sizeof(struct vminfo_struct));
+
+	vminfo(myvminfo);
+	//vminfo_printstats(myvminfo);
+
+	exit();
 
 	pgtabinfo();
 	printf(1, "Called sbrk(PGSIZE) 12 times - all physical pages taken.\nPress any key...\n");
@@ -410,11 +421,6 @@ main(int argc, char *argv[]){
 
 
 
-// Forward declarations
-void read_blocks();
-void sbrktest(void);
-void mem(void);
-void vminfo_printstats(struct vminfo_struct*);
 
 // A simple atoi() function
 // Source: http://www.geeksforgeeks.org/write-your-own-atoi/

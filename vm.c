@@ -445,6 +445,8 @@ struct run {
   struct run *next;
 };
 
+void refill_inactive();
+
 int vminfo_internal(struct vminfo_struct *vminfo_container)
 // Syscall which provides the user with memory information via a container structure vminfo_struct
 {
@@ -479,6 +481,8 @@ int vminfo_internal(struct vminfo_struct *vminfo_container)
 
   // Process info
   procsmemorystats(vminfo_container);
+
+  refill_inactive();
 
   return 0;
 }
