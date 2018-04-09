@@ -232,7 +232,6 @@ trap(struct trapframe *tf)
             currproc->phys_sz += PGSIZE;
 
             // Add this page to the LRU cache
-            cprintf("kernel: Adding pte at kernel address 0x%p to LRU cache\n",pte);
             lru_cache_add(pte, 1);
             
             //cprintf("Lazy allocation succeeded for address 0x%p(kalloc'ed 0x%p) for process [%s]\n", fault_page, mem, currproc->name);

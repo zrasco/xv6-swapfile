@@ -613,6 +613,7 @@ void lru_cache_add(pte_t addr, int pageHot)
 // Add a cold page to the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
 // if the page is known to be hot, such as when a page is faulted in (pageHot > 0).
 {
+	cprintf("kernel: Adding %s pte at kernel address 0x%p to LRU cache\n",(pageHot == 0 ? "cold" : "hot"),addr);
 	lru_list_lock();
 
 	struct lru_list_entry *new_entry = lru_bank_get_new();
