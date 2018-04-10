@@ -96,7 +96,7 @@ char *invoke_swapper()
   // 1) Choose a victim page via the LRU algorithm
   unsigned int proc_addr = 0;
   
-  pde_t *victim_pde = (pde_t*)get_victim_page(&proc_addr);
+  pde_t *victim_pde = (pde_t*)get_victim_page();
   pte_t *mapped_victim_pte = (pte_t*)victim_pde;
   pte_t new_victim_pte = 0;
   char *kernel_addr = P2V(PTE_ADDR(*mapped_victim_pte));
@@ -115,13 +115,15 @@ char *invoke_swapper()
   //swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
   swp_entry_t new_slot = get_swap_page();
   //cprintf("Got new swap slot. Slot #%d. Swap pages left: %d\n",SWP_OFFSET(new_slot),swap_page_count());
-  
+
+  char *victim_proc_name = find_proc_pte(victim_pde, &proc_addr);
+
   //cprintf("Writing contents of page to %s at position %d\n",SWAPFILE_FILENAME,PGSIZE * (SWP_OFFSET(new_slot) + 1));
   //cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
   swap_out(victim_pde, SWP_OFFSET(new_slot));
   //cprintf("Done writing contents. swap_val==%d\n",swap_val);
   
-  cprintf("kernel: Page 0x%p(ka: 0x%p) in a process swapped out to slot %d.\n",proc_addr,kernel_addr,SWP_OFFSET(new_slot));
+  cprintf("kernel: Page 0x%p(ka: 0x%p) in process [%s] swapped out to slot %d.\n",proc_addr,kernel_addr,victim_proc_name,SWP_OFFSET(new_slot));
   // PTE no longer resident or dirty
   new_victim_pte = swp_entry_to_pte(new_slot);
   new_victim_pte |= PTE_FLAGS(*mapped_victim_pte);

@@ -583,3 +583,54 @@ void procsmemorystats(struct vminfo_struct *vminfo_container)
   }
   release(&ptable.lock);
 }
+
+char *find_proc_pte(pde_t *pte, unsigned int *va)
+// UNSAFE, supports 10 max
+// Returns process name and virtual address corresponding to given kernel page directory entry
+// Should only be used for debug purposes since this is time-consuming!
+{
+  int index = 0;
+  struct proc *p;
+
+  acquire(&ptable.lock);
+  for (p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+  {
+    if (p->state == UNUSED)
+      continue;
+
+  for (int index1 = 0; index1 < NPDENTRIES; index1++)
+    // Page tables have two tiers. Traverse tier 1, the page directory
+    {
+      // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
+      // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
+      //
+      // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
+      pde_t *pde = &(p->pgdir[index1]);
+
+      if (*pde & PTE_P && index1 < 512)
+      // Page directory
+      {
+        // Now traverse through second tier, the page table corresponding to the page directory entry above
+        // This page table is full of PTEs, each of which can address 4KB
+        pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+        for (int index2 = 1; index2 < NPTENTRIES; index2++)
+        {
+          if (&pgtab[index2] == pte)
+          {
+            *va = (unsigned int)PGADDR(index1,index2,0);
+            release(&ptable.lock);
+            return p->name;
+          }
+            
+        }
+      }
+    }
+
+    if (index >= 10)
+      break;
+  }
+  release(&ptable.lock);
+
+  return NULL;
+}

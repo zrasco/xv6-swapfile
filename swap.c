@@ -172,47 +172,6 @@ int swap_free_nolocks(swp_entry_t entry)
 	return swap_entry_free(&swap_info[0], SWP_OFFSET(entry));
 }
 
-unsigned int *get_victim_page(unsigned int *proc_addr)
-// Returns the address of a page directory entry for the next victim page
-{
-  // Not yet implemented. Uses LRU with all processes in the system (kernel memory is all considered non-swappable)
-  struct proc *currproc = myproc();
-
-  // For now, just get first present page available from the process that needs a victim page
-
-  // Below is stolen from pgtabinfo_internal. Ignore the first 10 pages to prevent thrasing w/code execution (code will keep being paged out & back in)
-
-  for (int index1 = 0; index1 < NPDENTRIES; index1++)
-  // Page tables have two tiers. Traverse tier 1, the page directory
-  {
-    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
-    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
-    //
-    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
-    pde_t *pde = &(currproc->pgdir[index1]);
-
-    if (*pde & PTE_P && index1 < 512)
-    // Page directory
-    {
-      // Now traverse through second tier, the page table corresponding to the page directory entry above
-      // This page table is full of PTEs, each of which can address 4KB
-      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-      for (int index2 = 11; index2 < NPTENTRIES; index2++)
-      {
-        if (pgtab[index2] & PTE_P)
-        {
-          *proc_addr = (unsigned int)PGADDR(index1,index2,0);
-          return (unsigned int*)&pgtab[index2];
-        }
-          
-      }
-    }
-  }
-
-  return 0;
-}
-
 void free_swap_pages(struct proc *currproc)
 // Frees all swap pages 
 {
@@ -607,7 +566,7 @@ void lru_bank_release(struct lru_list_entry *target)
 	currpg->used--;
 }
 
-void lru_cache_add(pte_t addr, int pageHot)
+void lru_cache_add(pde_t addr, int pageHot)
 // Add a cold page to the front of the inactive_list. Will be moved to active_list with a call to mark_page_accessed()
 // if the page is known to be hot, such as when a page is faulted in (pageHot > 0).
 {
@@ -891,4 +850,80 @@ void lru_remove_proc_pages(struct proc *currproc)
 	  
     }
   }
+}
+
+unsigned int *get_victim_page()
+// Returns the address of a page directory entry for the next victim page
+{
+
+	struct lru_list_entry *curr = lru_list.inactive_list;
+	struct lru_list_entry *victim_entry = NULL;
+	pte_t *pte = NULL;
+
+	// Give us some fresh inactives
+	lru_rotate_lists();
+
+	while (curr)
+	// This loop gets the last inactive entry that hasn't been accessed
+	{
+		pte = (pte_t*)curr->addr;
+
+		if (!(*pte & PTE_A) && (*pte & PTE_P))
+			// Page not accessed & is still present in memory. Make this the current victim
+			victim_entry = curr;
+
+		curr = curr->next;
+	}
+
+	if (victim_entry == NULL)
+	// Unlikely (especially after a list rotation) and there are more sophisticated ways to deal with this. May implement if this happens often
+		panic("No LRU inactive pages present in physical memory");
+	else
+	{
+		pte = (pte_t*)victim_entry->addr;
+
+		return (unsigned int*)victim_entry->addr;
+	}
+
+
+	/*
+  // Not yet implemented. Uses LRU with all processes in the system (kernel memory is all considered non-swappable)
+  struct proc *currproc = myproc();
+
+  // For now, just get first present page available from the process that needs a victim page
+
+  // Below is stolen from pgtabinfo_internal. Ignore the first 10 pages to prevent thrasing w/code execution (code will keep being paged out & back in)
+
+  for (int index1 = 0; index1 < NPDENTRIES; index1++)
+  // Page tables have two tiers. Traverse tier 1, the page directory
+  {
+    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
+    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
+    //
+    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
+    pde_t *pde = &(currproc->pgdir[index1]);
+
+    if (*pde & PTE_P && index1 < 512)
+    // Page directory
+    {
+      // Now traverse through second tier, the page table corresponding to the page directory entry above
+      // This page table is full of PTEs, each of which can address 4KB
+      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+
+      for (int index2 = 11; index2 < NPTENTRIES; index2++)
+      {
+        if (pgtab[index2] & PTE_P)
+        {
+          *proc_addr = (unsigned int)PGADDR(index1,index2,0);
+		  cprintf("get_victim_page: proc_addr==0x%p, retval==0x%p\n",*proc_addr,&pgtab[index2]);
+          return (unsigned int*)&pgtab[index2];
+        }
+          
+      }
+    }
+  }
+
+  */
+
+  return 0;
 }

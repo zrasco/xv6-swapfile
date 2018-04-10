@@ -130,6 +130,7 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 void			procsmemorystats(struct vminfo_struct*);
+char           *find_proc_pte(pde_t *, unsigned int *);
 
 // swtch.S
 void            swtch(struct context**, struct context*);
@@ -206,7 +207,7 @@ unsigned int 	swap_page_count(void);
 int             swap_in(void*, unsigned int);
 void            free_swap_pages(struct proc*);
 unsigned int    swap_refcount(unsigned long);
-unsigned int    *get_victim_page(unsigned int*);
+unsigned int    *get_victim_page();
 void            ksetswapfileptr(struct file*);
 void            lru_remove_proc_pages(struct proc*);
 void            lru_rotate_lists();

@@ -323,6 +323,8 @@ clearpteu(pde_t *pgdir, char *uva)
   *pte &= ~PTE_U;
 }
 
+void lru_cache_add(pte_t*, int);
+
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
@@ -362,6 +364,12 @@ copyuvm(pde_t *pgdir, uint sz)
       memmove(mem, (char*)P2V(pa), PGSIZE);
       if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0)
         goto bad;
+
+      pte_t *newpte = walkpgdir(d,(void*)i,0);
+      //cprintf("copyuvm: mappages() succeeded in swap branch. Adjusting page table entry\n");
+
+      // The old PTE is exactly what we need so just copy it
+      lru_cache_add(newpte,0);
     }
     else
     {

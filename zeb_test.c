@@ -107,9 +107,6 @@ main(int argc, char *argv[]){
 	printf(1,"*** End of LRU ***\n");
 	//vminfo_printstats(myvminfo);
 
-	exit();
-
-	pgtabinfo();
 	printf(1, "Called sbrk(PGSIZE) 12 times - all physical pages taken.\nPress any key...\n");
 	gets(input, 10);
 
@@ -120,9 +117,14 @@ main(int argc, char *argv[]){
 	Afterwards, page 1 is in the swap file, the rest are in memory.
 	*/
 	arr[12] = sbrk_force_swapout(PGSIZE);
+	arr[13] = sbrk_force_swapout(PGSIZE);
+	vminfo(myvminfo);
+		
+	pgtabinfo();
 	printf(1, "arr[12]=0x%x\n", arr[12]);
 	printf(1, "Called sbrk(PGSIZE) for the 13th time, a page fault should occur and one page in swap file.\nPress any key...\n");
 	gets(input, 10);
+
 
 	/*
 	Allocate page 16.

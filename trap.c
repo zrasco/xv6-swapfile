@@ -229,7 +229,7 @@ trap(struct trapframe *tf)
             //  PGSIZE,currproc->name,fault_page,V2P(mem));
 
             cprintf("Lazy allocation for process [%s], phys_sz b/a: %d/%d\n",currproc->name, currproc->sz, currproc->sz+PGSIZE);
-            cprintf("kernel: # of physical pages available: %d\n",kfreepagecnt());
+            //cprintf("kernel: # of physical pages available: %d\n",kfreepagecnt());
 
             // Increase count of pages "actually" allocated
             currproc->phys_sz += PGSIZE;
