@@ -105,8 +105,8 @@ trap(struct trapframe *tf)
       unsigned int fault_page = PGROUNDDOWN(fault_addr);
 
       // Page fault occured in user space, likely from lazy allocation
-      //cprintf("Page fault from process [%s]. Faulting addr: 0x%p. Faulting page: 0x%p\n",
-      //  myproc()->name,fault_addr,fault_page);
+      //cprintf("Page fault from process [%s,%d]. Faulting addr: 0x%p. Faulting page: 0x%p\n",
+      //  myproc()->name,myproc()->pid,fault_addr,fault_page);
 
       currproc->page_fault_cnt++;
 
@@ -228,10 +228,14 @@ trap(struct trapframe *tf)
             //cprintf("Page of size %d bytes allocated for process [%s] at virtual address 0x%p for physical address 0x%p\n",
             //  PGSIZE,currproc->name,fault_page,V2P(mem));
 
+            cprintf("Lazy allocation for process [%s], phys_sz b/a: %d/%d\n",currproc->name, currproc->sz, currproc->sz+PGSIZE);
+            cprintf("kernel: # of physical pages available: %d\n",kfreepagecnt());
+
             // Increase count of pages "actually" allocated
             currproc->phys_sz += PGSIZE;
 
             // Add this page to the LRU cache
+            
             lru_cache_add(pte, 1);
             
             //cprintf("Lazy allocation succeeded for address 0x%p(kalloc'ed 0x%p) for process [%s]\n", fault_page, mem, currproc->name);

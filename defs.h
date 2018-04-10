@@ -208,6 +208,8 @@ void            free_swap_pages(struct proc*);
 unsigned int    swap_refcount(unsigned long);
 unsigned int    *get_victim_page(unsigned int*);
 void            ksetswapfileptr(struct file*);
+void            lru_remove_proc_pages(struct proc*);
+void            lru_rotate_lists();
 
 // swapuser.c
 void            swapinit(void);

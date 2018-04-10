@@ -244,7 +244,9 @@ exit(void)
   }
 
   // Free swap pages
+  //cprintf("kernel: calling free_swap_pages() for [%s]\n",curproc->name);
   free_swap_pages(curproc);
+  lru_remove_proc_pages(curproc);
 
   begin_op();
   iput(curproc->cwd);

@@ -101,6 +101,10 @@ main(int argc, char *argv[]){
 	struct vminfo_struct *myvminfo = malloc(sizeof(struct vminfo_struct));
 
 	vminfo(myvminfo);
+	printf(1,"*** End of LRU ***\n");
+	arr[2][0] = 0;
+	vminfo(myvminfo);
+	printf(1,"*** End of LRU ***\n");
 	//vminfo_printstats(myvminfo);
 
 	exit();

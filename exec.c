@@ -60,6 +60,9 @@ exec(char *path, char **argv)
   end_op();
   ip = 0;
 
+  // Remove any LRU mappings for this process before they're overwritten
+  lru_remove_proc_pages(curproc);
+
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   sz = PGROUNDUP(sz);
@@ -104,7 +107,7 @@ exec(char *path, char **argv)
   curproc->tf->esp = sp;
   curproc->pages_swapped_out = 0; // Pages swapped out count
   //cprintf("stack pointer: sp=0x%p\n",sp);
-  switchuvm(curproc);
+  switchuvm(curproc);  
   freevm(oldpgdir);
   return 0;
 
