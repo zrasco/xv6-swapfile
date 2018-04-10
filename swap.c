@@ -93,16 +93,6 @@ void print_swap_map()
 	cprintf("\n");
 }
 
-void kswapd()
-{
-  int free_pages = kfreepagecnt1();
-
-  if (free_pages < PAGES_LOW)
-  {
-    // Invoke the swapper. Will mark (PAGES_HIGH - PAGES_LOW) pages to be swapped
-  }
-}
-
 unsigned int swap_page_total_count()
 {
 	return SWAPFILE_PAGES;
@@ -187,8 +177,6 @@ void free_swap_pages(struct proc *currproc)
     {
       pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
 
-	  //cprintf("kernel: proc exit crawl. pgtab addr: 0x%p\n",pgtab);
-
       for (int index2 = 11; index2 < NPTENTRIES; index2++)
       {
         if (!(pgtab[index2] & PTE_P) && (pgtab[index2] & PTE_U))
@@ -225,13 +213,6 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	//					kernel_addr,p->swap_file,(file_offset * PGSIZE), (file_offset * PGSIZE) + PGSIZE);
 
 	old_offset = p->swap_file->off;
-	
-	/*
-	cprintf("Before list lock\n");
-	swap_list_lock();
-	cprintf("Before device lock\n");
-	swap_device_lock(p);
-	*/
 
 	// Quick and dirty hack for now. Need a lock-protected state variable later
 	myproc()->pages_swapped_out++;
@@ -240,13 +221,6 @@ int swap_out(pte_t *mapped_victim_pte, unsigned int offset)
 	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
   	retval = filewrite(p->swap_file,kernel_addr,PGSIZE);
   	p->swap_file->off = old_offset;
-
-	/*
-	cprintf("Before dev unlock\n");
-	swap_device_unlock(p);
-	cprintf("Before list unlock\n");
-	swap_list_unlock();
-	*/
 
 	return retval;
 }
@@ -269,8 +243,8 @@ int swap_in(void *page_addr, unsigned int offset)
 
 	// Read contents from swapfile
 	p->swap_file->off = (unsigned int)(file_offset * PGSIZE);
-  retval = fileread(p->swap_file,page_addr,PGSIZE);
-  p->swap_file->off = old_offset;
+	retval = fileread(p->swap_file,page_addr,PGSIZE);
+	p->swap_file->off = old_offset;
 
 	return retval;
 }
@@ -379,7 +353,6 @@ inline int scan_swap_map(struct swap_info_struct *si)
 		/* We found a completly empty cluster, so start
 		 * using it.
 		 */
-		//cprintf("in second if. offset==%d\n",offset);
 		goto got_page;
 	}
 	/* No luck, so now go finegrined as usual. -Andrea */
@@ -474,10 +447,6 @@ struct lru_list_entry *lru_bank_get_new()
 	struct lru_bank_page *lb_curr = lru_bank;
 	struct lru_bank_page *lb_last = lb_curr;
 
-	//cprintf("kernel: lru_bank_get_new(): Before while loop\n");
-	//cprintf("kernel: lru_bank_get_new(): lb_curr==0x%p\n",lb_curr);
-	//cprintf("kernel: lru_bank_get_new(): lb_curr->next==0x%p\n",lb_curr->next);
-
 	while (lb_curr)
 	{
 		uint exit = 0;
@@ -487,12 +456,10 @@ struct lru_list_entry *lru_bank_get_new()
 			// Take an entry from the current page
 			for (int x = 0; x < LRU_ENTRIES_PER_PAGE; x++)
 			{
-				//cprintf("kernel: lru_bank_get_new(): x==%d,lb_curr->slots[x].addr==0x%p\n",x,lb_curr->slots[x].addr);
 				if (lb_curr->slots[x].addr == 0)
 				// Found free entry
 				{
 					retval = &lb_curr->slots[x];
-					//cprintf("kernel: lru_bank_get_new(): retval==0x%p\n",retval);
 					lb_curr->used++;
 					exit = 1;
 					break;
@@ -507,8 +474,6 @@ struct lru_list_entry *lru_bank_get_new()
 		lb_last = lb_curr;
 		lb_curr = lb_curr->next;
 	}
-
-	//cprintf("kernel: lru_bank_get_new(): After while loop\n");
 
 	if (retval == NULL)
 	// All LRU entries in all currently allocated bank pages are in use. Create a new bank page
@@ -538,8 +503,6 @@ struct lru_bank_page *lru_bank_find_page(struct lru_list_entry *entry)
 {
 	struct lru_bank_page *retval = NULL;
 	struct lru_bank_page *currpg = lru_bank;
-
-	//cprintf("kernel: lru_bank_find_page(), currpg==0x%p, currpg+PGSIZE==0x%p, entry==0x%p\n",(uint)currpg,(uint)currpg+PGSIZE,entry);
 
 	while (currpg && retval == NULL)
 	{
@@ -645,7 +608,6 @@ void lru_cache_del(pte_t addr, uint rangeSize)
 
 	// Now search inactive list
 	curr = lru_list.inactive_list;
-	//cprintf("addr==0x%p, addr+rangeSize==0x%p, curr == 0x%p, curr->addr==0x%p\n",addr,((uint)addr + rangeSize),curr,curr->addr);
 	prev = curr;
 
 	while (curr)
@@ -740,7 +702,6 @@ void refill_inactive()
 	unsigned long total_lru_pages = lru_list.nr_active_pages + lru_list.nr_inactive_pages;
 	unsigned long active_target_count;
 	struct lru_list_entry *entry = lru_list.active_list;
-	unsigned int remaining_to_scan = lru_list.nr_active_pages;
 
 	// Get # of pages to move
 	// Per the docs, the active needs needs to be 2/3 the size of the inactive list
@@ -751,8 +712,6 @@ void refill_inactive()
 
 	if (ratio < 0)
 		ratio = 0;
-
-	remaining_to_scan -= ratio;
 
 	cprintf("kernel: refill_inactive() found: atc==%d, nr_pages==%d, active==%d, inactive==%d, ratio==%d \n",active_target_count, nr_pages,lru_list.nr_active_pages,lru_list.nr_inactive_pages,ratio);
 	cprintf("kernel: refill_inactive() moving %d pages from active to inactive list\n",ratio);
@@ -766,11 +725,8 @@ void refill_inactive()
 		struct lru_list_entry *nextentry = entry->next;
 		uint is_active = (*pte & PTE_A);
 
-		cprintf("kernel: refill_inactive(): index==%d, remaining_to_scan==%d\n",index,remaining_to_scan);
-
 		// We're either going to move the page to the front of the active list or to the inactive list
 		// In either case, we'll delete the one we have now
-
 
 		if (!(is_active) && ratio > 0)
 		// Accessed bit is not set, so page isn't hot anymore. Move to inactive list
@@ -779,14 +735,13 @@ void refill_inactive()
 
 			// Clear accessed bit
 			*pte &= ~PTE_A;		
-			lru_cache_del(addr,0);			
+			lru_cache_del(addr,0);
 			lru_cache_add(addr,0);
 
 			// Add accessed bit
 			//*pte |= PTE_A;
 
 			ratio--;
-			remaining_to_scan--;
 		}
 		else if (is_active)
 		// Page is still hot, clear accessed bit & move to front of active list
@@ -885,45 +840,5 @@ unsigned int *get_victim_page()
 		return (unsigned int*)victim_entry->addr;
 	}
 
-
-	/*
-  // Not yet implemented. Uses LRU with all processes in the system (kernel memory is all considered non-swappable)
-  struct proc *currproc = myproc();
-
-  // For now, just get first present page available from the process that needs a victim page
-
-  // Below is stolen from pgtabinfo_internal. Ignore the first 10 pages to prevent thrasing w/code execution (code will keep being paged out & back in)
-
-  for (int index1 = 0; index1 < NPDENTRIES; index1++)
-  // Page tables have two tiers. Traverse tier 1, the page directory
-  {
-    // Check which of the 1024 page directory entries, or PDEs, are present (512 are user-space).
-    // Each PDE contains info for up to 1024 page table entries, or PTEs. This is equal to a 4MB range per PDE.
-    //
-    // So with each PDE being able to address 4MB, and 1024 PDEs, this gives the entire 32-bit range or 4GB.
-    pde_t *pde = &(currproc->pgdir[index1]);
-
-    if (*pde & PTE_P && index1 < 512)
-    // Page directory
-    {
-      // Now traverse through second tier, the page table corresponding to the page directory entry above
-      // This page table is full of PTEs, each of which can address 4KB
-      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-
-      for (int index2 = 11; index2 < NPTENTRIES; index2++)
-      {
-        if (pgtab[index2] & PTE_P)
-        {
-          *proc_addr = (unsigned int)PGADDR(index1,index2,0);
-		  cprintf("get_victim_page: proc_addr==0x%p, retval==0x%p\n",*proc_addr,&pgtab[index2]);
-          return (unsigned int*)&pgtab[index2];
-        }
-          
-      }
-    }
-  }
-
-  */
-
-  return 0;
+  	return 0;
 }

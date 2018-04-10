@@ -489,13 +489,7 @@ int vminfo_internal(struct vminfo_struct *vminfo_container)
 
   // Process info
   procsmemorystats(vminfo_container);
-
-  print_lru();
-  lru_rotate_lists();
-  print_lru();
-  lru_rotate_lists();
-  print_lru();
-
+  
   return 0;
 }
 
@@ -588,32 +582,5 @@ int pgtabinfo_internal(void)
   cprintf("Total %d byte pages of physical memory allocated(user): %d\n",PGSIZE,uphyspages);
   cprintf("Total %d byte pages of physical memory allocated(kernel): %d\n",PGSIZE,kphyspages);
 
-
-/*
-  pde_t *pde;
-  pte_t *pgtab;
-
-  pde = &pgdir[PDX(va)];
-  if(*pde & PTE_P){
-    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-  } else {
-    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
-      return 0;
-    // Make sure all those PTE_P bits are zero.
-    memset(pgtab, 0, PGSIZE);
-    // The permissions here are overly generous, but they can
-    // be further restricted by the permissions in the page tablef
-    // entries, if necessary.
-    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
-  }
-  return &pgtab[PTX(va)];
-*/
   return 0;
 }
-
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.
-//PAGEBREAK!
-// Blank page.

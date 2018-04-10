@@ -362,13 +362,6 @@ scheduler(void)
     }
     release(&ptable.lock);
   }
-
-    // Hard-code the kswapd() daemon thread for simpilicity's sake
-    // In an actual OS, seperate kernel threads would be ran here
-    
-    //acquire(&kswapinfo.sdev_lock);
-    //kswapd();
-    //release(&kswapinfo.sdev_lock);  
 }
 
 // Enter scheduler.  Must hold only ptable.lock

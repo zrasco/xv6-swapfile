@@ -79,19 +79,15 @@ char *invoke_swapper()
 // Victim page is chosen via an LRU algorithm from one of the running processes. Kernel memory itself is not cannibalized for this purpose
 // Assumes we can find a victim. If not, error checking will need to be added. Haven't run into this yet, however.
 {
-  //cprintf("Out of physical memory and invoking swapper [%s]. eip==0x%p, fault_addr==0x%p, fault_page==0x%p\n",
-  //            currproc->name,tf->eip,fault_addr,fault_page);
   // Out of physical memory, so invoke the swapper.
   // Physical memory page range is anywhere from the 4MB kernel boundary to PHYSTOP (0x80400000 to 0x81000000, for example)
-  // uva2ka(currproc->pgdir, process virtual address as char* )
 
   // Can't do anything with no swap pages available!
   if (swap_page_count() == 0)
   {
     cprintf("kalloc: no swap pages left!\n");
     return NULL;
-  }
-    
+  }    
   
   // 1) Choose a victim page via the LRU algorithm
   unsigned int proc_addr = 0;
@@ -100,30 +96,20 @@ char *invoke_swapper()
   pte_t *mapped_victim_pte = (pte_t*)victim_pde;
   pte_t new_victim_pte = 0;
   char *kernel_addr = P2V(PTE_ADDR(*mapped_victim_pte));
-
-  //cprintf("Victim addr: 0x%p\n",victim_pde);
-  //cprintf("Victim page chosen! process addr==0x%p, kernel addr==0x%p\n", proc_addr, kernel_addr);
-  //cprintf("pte=0x%p\n",victim);
-  //cprintf("victim pte location=0x%p\nPTE flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n",
-  //        victim_pde,*victim_pde & PTE_P,*victim_pde & PTE_U, *victim_pde & PTE_W,*victim_pde & PTE_D);
         
   // The process page table entry for this page should be at a unique address in kernel memory above the KERNBASE + 4MB line
   // This gives us a unique offset to the swap map, which is shared amongst all processes
-  
-  //char *kaddr_of_victim = uva2ka(currproc->victim,)
 
-  //swp_entry_t swap_slot = pte_to_swp_entry((uint)victim_pde);
   swp_entry_t new_slot = get_swap_page();
-  //cprintf("Got new swap slot. Slot #%d. Swap pages left: %d\n",SWP_OFFSET(new_slot),swap_page_count());
 
   char *victim_proc_name = find_proc_pte(victim_pde, &proc_addr);
 
   //cprintf("Writing contents of page to %s at position %d\n",SWAPFILE_FILENAME,PGSIZE * (SWP_OFFSET(new_slot) + 1));
   //cprintf("Swap map offset of this PTE: %d\n",SWP_OFFSET(swap_slot));
   swap_out(victim_pde, SWP_OFFSET(new_slot));
-  //cprintf("Done writing contents. swap_val==%d\n",swap_val);
   
   cprintf("kernel: Page 0x%p(ka: 0x%p) in process [%s] swapped out to slot %d.\n",proc_addr,kernel_addr,victim_proc_name,SWP_OFFSET(new_slot));
+
   // PTE no longer resident or dirty
   new_victim_pte = swp_entry_to_pte(new_slot);
   new_victim_pte |= PTE_FLAGS(*mapped_victim_pte);
@@ -133,27 +119,19 @@ char *invoke_swapper()
   // Replace the PTE
   *mapped_victim_pte = new_victim_pte;
 
-  //*mapped_victim_pte = swp_entry_to_pte(new_slot);
 
   //cprintf("victim pte location=0x%p\nPTE flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n",
   //        victim_pde,*victim_pde & PTE_P,*victim_pde & PTE_U, *victim_pde & PTE_W,*victim_pde & PTE_D);          
 
   //cprintf("new victim pte offset: %d, flags: PTE_P=%d,PTE_U=%d,PTE_W=%d,PTE_D=%d\n", SWP_OFFSET(new_slot),
   //        new_victim_pte & PTE_P,new_victim_pte & PTE_U,new_victim_pte & PTE_W,new_victim_pte & PTE_D);
-
-  
-  //swap_slot = swap_slot;
   
   // 2) If the victim is non-dirty and is already mapped to a slot in the swap file, do nothing.
   // 2a) If the victim is dirty and is already mapped to a slot in the swap file, write that page to the swap file & clear dirty bit.
-
   // 2b) If the victim is not mapped to a slot in the swap file, get a free slot & map it.
   //     If none available, out of memory error and terminate process
   // 2c) Otherwise, write that page to the swap file & clear dirty bit.
-
   // 3) At this point we have a viable victim page, with the contents in the swapfile. Mark that page as non-present
-
-
   // 4) Call mappages OR
   // 4) Use kfree() on the associated address
   return kernel_addr;
