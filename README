@@ -1,55 +1,111 @@
-xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
-Version 6 (v6).  xv6 loosely follows the structure and style of v6,
-but is implemented for a modern x86-based multiprocessor using ANSI C.
+#xv6-swapfile
+Extended the xv6 OS to include a Virtual Memory Manager with swapfile support and LRU cache. Supervised by Ed Jorgensen and Dr. Ajoy Datta in 2018 during my senior year at UNLV (RIP Dr. Datta :( )
 
-ACKNOWLEDGMENTS
 
-xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
-to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
-2000)). See also http://pdos.csail.mit.edu/6.828/2016/xv6.html, which
-provides pointers to on-line resources for v6.
+Changes made:
 
-xv6 borrows code from the following sources:
-    JOS (asm.h, elf.h, mmu.h, bootasm.S, ide.c, console.c, and others)
-    Plan 9 (entryother.S, mp.h, mp.c, lapic.c)
-    FreeBSD (ioapic.c)
-    NetBSD (console.c)
+console.c
+---------
+printaddr() method added
+changed %p to print address instead of integer
 
-The following people have made contributions: Russ Cox (context switching,
-locking), Cliff Frey (MP), Xiao Yu (MP), Nickolai Zeldovich, and Austin
-Clements.
+defs.h
+-------
+Added struct vminfo_struct;
+All new functions from kalloc.c
+procsmemorystats() and find_proc_pte() from proc.c
+vminfo and pgtabinfo internal functions from vm.c
+swapfile functions from swap.c & usermode swapfile initialization in swapuser.c
 
-We are also grateful for the bug reports and patches contributed by Silas
-Boyd-Wickizer, Anton Burtsev, Cody Cutler, Mike CAT, Tej Chajed, Nelson Elhage,
-Saar Ettinger, Alice Ferrazzi, Nathaniel Filardo, Peter Froehlich, Yakir Goaron,
-Shivam Handa, Bryan Henry, Jim Huang, Alexander Kapshuk, Anders Kaseorg,
-kehao95, Wolfgang Keller, Eddie Kohler, Austin Liew, Imbar Marinescu, Yandong
-Mao, Hitoshi Mitake, Carmi Merimovich, Joel Nider, Greg Price, Ayan Shafqat,
-Eldar Sehayek, Yongming Shen, Cam Tenny, Rafael Ubal, Warren Toomey, Stephen Tu,
-Pablo Ventura, Xi Wang, Keiichi Watanabe, Nicolas Wolovick, Grant Wu, Jindong
-Zhang, Icenowy Zheng, and Zou Chang Wei.
+exec.c
+------
+Removes LRU mappings from process before exec() overwrites page table
+Debug output & new statistics for processes initialized
 
-The code in the files that constitute xv6 is
-Copyright 2006-2016 Frans Kaashoek, Robert Morris, and Russ Cox.
+file.h & fs.c & fs.h
+------
+Support for double inode indirection added (for larger swapfile)
 
-ERROR REPORTS
+init.c
+-------
+init now spawns a temporary process to inititalize the swapfile before executing the shell
 
-If you spot errors or have suggestions for improvement, please send email to
-Frans Kaashoek and Robert Morris (kaashoek,rtm@csail.mit.edu).  If you have
-suggestions for improvements, please keep in mind that the main purpose of xv6
-is as a teaching operating system for MIT's 6.828. For example, we are in
-particular interested in simplifications and clarifications, instead of
-suggestions for new systems calls, more portability, etc.
+kalloc.c
+---------
+added statistical fields to kmem
+kswapmem data structure
+Added invoke_swapper(), kmaxprocsize(), kexistfreepages(), kfreepagecnt(), kallocatedpages(), kallocbeginning(), kgetfreelistptr()
+freerange() debug info printing
+kalloc() now invokes swapper to give a page, if none available
 
-BUILDING AND RUNNING XV6
+main.c
+-------
+Added kswapinit() step to initialize the swap space, just before userinit()
 
-To build xv6 on an x86 ELF machine (like Linux or FreeBSD), run "make".
-On non-x86 or non-ELF machines (like OS X, even on x86), you will
-need to install a cross-compiler gcc suite capable of producing x86 ELF
-binaries.  See http://pdos.csail.mit.edu/6.828/2016/tools.html.
-Then run "make TOOLPREFIX=i386-jos-elf-".
+Makefile
+--------
+Now links swap.o
+Now links swapuser.o (ULIB args)
+Added 8MB SWAPFILE to fs.img
+UPROGS now includes zeb_test
+EXTRA now includes zeb_test.c, swap.c and swapuser.o
 
-To run xv6, install the QEMU PC simulators.  To run in QEMU, run "make qemu".
+memlayout.h
+------------
+PHYSTOP changed to various values (commented out) for testing swapping
 
-To create a typeset version of the code, run "make xv6.pdf".  This
-requires the "mpage" utility.  See http://www.mesa.nl/pub/mpage/.
+mkfs.c
+-------
+Debugging info added to main(), currently commented out (for doubly-indirect inodes)
+balloc()/iappend() modified to allow doubly-indirect inodes
+
+param.h
+-------
+FSSIZE increased from 1000 to 20985 for larger file system
+
+printf.h
+-------
+printaddr() function added
+%p and %x now print addresses, not integers
+
+proc.h
+-------
+Statistical fields related to swapping and page faults added
+
+swap.h, swap.c, swapuser.c (No modifications, files did not previously exist.)
+------
+Contains kernel & user swap/LRU API header & implementation
+
+syscall.c & syscall.h & sysfile.c
+---------
+4 system calls added: vminfo, pgtabinfo, setswapfilefd, sbrk_force_swapout
+
+sysproc.c
+---------
+sys_sbrk() modified for lazy allocation
+sys_sbrk_force_swapout(), sys_vminfo(), and sys_pgtabinfo() added
+
+trap.c
+---------
+Support for NULL reference protection, lazy allocation, swapping, and LRU added
+
+types.h
+---------
+Added NULL constant and vminfo_struct data structure
+
+user.h
+-------
+Added vminfo(), pgtabinfo(), setswapfilefd(), sbrk_force_swapout(), and swapinit() usermode API calls
+
+usys.S
+-------
+Added vminfo, pgtabinfo, setswapfilefd, and sbrk_force_swapout system calls
+
+vm.c
+-----
+Added support to copyuvm for lazy allocation, swapping, and LRU
+Added vminfo_internal() & pgtabinfo_internal() methods
+
+zeb_test.c
+-----------
+Various tests of functionality added for virtual memory
