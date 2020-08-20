@@ -1,4 +1,3 @@
-#xv6-swapfile
 Extended the xv6 OS to include a Virtual Memory Manager with swapfile support and LRU cache. Supervised by Ed Jorgensen and Dr. Ajoy Datta in 2018 during my senior year at UNLV (RIP Dr. Datta :( )
 
 
