@@ -105,6 +105,7 @@ trap(struct trapframe *tf)
       unsigned int fault_page = PGROUNDDOWN(fault_addr);
 
       // Page fault occured in user space, likely from lazy allocation
+
       //cprintf("Page fault from process [%s,%d]. Faulting addr: 0x%p. Faulting page: 0x%p\n",
       //  myproc()->name,myproc()->pid,fault_addr,fault_page);
 
@@ -114,29 +115,17 @@ trap(struct trapframe *tf)
       pte_t *pte = walkpgdir(currproc->pgdir,(const void*)fault_addr,0);
       //cprintf("pte=0x%p, *pte=0x%p\n",pte,*pte);
 
-      // In user space, assume process misbehaved.
-      //cprintf("pid %d %s: trap %d err %d on cpu %d "
-      //        "eip 0x%x addr 0x%x--kill proc\n",
-      //        currproc->pid, currproc->name, tf->trapno, tf->err, cpuid(), tf->eip,
-      //        rcr2());
-      //currproc->killed = 1;
-
       // Check for segfault (access violation)
       // Occurs if:
       // 1) Faulting address happens outside process boundary
       //    - Obviously this includes anything kernel-related, which starts at 0x80000000
       // 2) PTE is non-NULL, present, and user access is not allowed (i.e. user stack guard page)
       //
-      // TODO: Still iffy about this logic, test some more!
       if (fault_addr > currproc->sz || (pte != NULL && ((*pte & PTE_P) && !(*pte & PTE_U))))
       {
         cprintf("Segmentation fault from instruction address 0x%p accessing address 0x%p. Terminating program [%s, pid==%d]!\n",tf->eip,fault_addr,currproc->name,currproc->pid);
         if (pte != NULL)
           *pte |= PTE_U;
-
-        // Enable for debug purposes
-        //cprintf("pgtabinfo() debug output:\n");
-        //pgtabinfo();
 
         currproc->killed = 1;
         break;
@@ -152,6 +141,7 @@ trap(struct trapframe *tf)
           if (swap_refcount(offset) > 0)
           {
             // Very likely this page is swapped out. Proceed with swap in & remap
+
             //cprintf("Access to swapped out page(0x%p) with offset %d requested\n",fault_page,offset);
 
             // Need a page to swap this back into. This may involve a swap-out behind the scenes, but we can't worry about that here.
@@ -205,21 +195,17 @@ trap(struct trapframe *tf)
         {
             cprintf("Lazy allocation(1) failed at address 0x%p (most likely out of memory). Terminating process [%s]. Had %d pages still swapped out.\n",
               fault_page,currproc->name,currproc->pages_swapped_out);
-            //deallocuvm(pgdir, newsz, oldsz);
-            //kfree(kernel_addr);
             currproc->killed = 1;
 
         }
         else
         {
-          //memset(mem, 0, PGSIZE);
 
           //cprintf("mappages(0x%x,0x%x,%d,0x%x,PTE_W|PTE_U\n",currproc->pgdir,(char*)fault_addr,PGSIZE,V2P(mem));
 
           if(mappages(currproc->pgdir, (char*)fault_page, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0) {
             cprintf("Lazy allocation(2) failed at address 0x%p. Terminating process [%s].\n",
               fault_page,currproc->name);
-            //deallocuvm(pgdir, newsz, oldsz);
             kfree(mem);
             currproc->killed = 1;
           }
@@ -228,14 +214,10 @@ trap(struct trapframe *tf)
             //cprintf("Page of size %d bytes allocated for process [%s] at virtual address 0x%p for physical address 0x%p\n",
             //  PGSIZE,currproc->name,fault_page,V2P(mem));
 
-            cprintf("Lazy allocation for process [%s], phys_sz b/a: %d/%d\n",currproc->name, currproc->sz, currproc->sz+PGSIZE);
-            //cprintf("kernel: # of physical pages available: %d\n",kfreepagecnt());
-
             // Increase count of pages "actually" allocated
             currproc->phys_sz += PGSIZE;
 
             // Add this page to the LRU cache
-            
             lru_cache_add(pte, 1);
             
             //cprintf("Lazy allocation succeeded for address 0x%p(kalloc'ed 0x%p) for process [%s]\n", fault_page, mem, currproc->name);

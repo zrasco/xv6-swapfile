@@ -16,6 +16,8 @@ pde_t *kpgdir;  // for use in scheduler()
 // swap.c
 int swap_duplicate(swp_entry_t);
 int swap_free(swp_entry_t);
+void lru_cache_add(pte_t*, int);
+void print_lru();
 
 // Set up CPU's kernel segment descriptors.
 // Run once on entry on each CPU.
@@ -152,8 +154,8 @@ void
 kvmalloc(void)
 {
   kpgdir = setupkvm();
-  cprintf("setupkvm() allocated kpgdir. &kpgdir=0x%p(0x%p), kpgdir=0x%p(0x%p)\n",&kpgdir,V2P(&kpgdir),
-    kpgdir,V2P(kpgdir));
+  //cprintf("setupkvm() allocated kpgdir. &kpgdir=0x%p(0x%p), kpgdir=0x%p(0x%p)\n",&kpgdir,V2P(&kpgdir),
+  //  kpgdir,V2P(kpgdir));
   switchkvm();
 }
 
@@ -323,8 +325,6 @@ clearpteu(pde_t *pgdir, char *uva)
   *pte &= ~PTE_U;
 }
 
-void lru_cache_add(pte_t*, int);
-
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
@@ -452,8 +452,6 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 struct run {
   struct run *next;
 };
-
-void print_lru();
 
 int vminfo_internal(struct vminfo_struct *vminfo_container)
 // Syscall which provides the user with memory information via a container structure vminfo_struct

@@ -811,27 +811,39 @@ unsigned int *get_victim_page()
 // Returns the address of a page directory entry for the next victim page
 {
 
-	struct lru_list_entry *curr = lru_list.inactive_list;
+	struct lru_list_entry *curr = NULL;
 	struct lru_list_entry *victim_entry = NULL;
 	pte_t *pte = NULL;
 
-	// Give us some fresh inactives
-	lru_rotate_lists();
+	// Try this # of times to rotate the list and find a victim. 
+	int attempts = 2;
 
-	while (curr)
-	// This loop gets the last inactive entry that hasn't been accessed
+	for (int index = 0; index < attempts; index++)
 	{
-		pte = (pte_t*)curr->addr;
+		// Give us some fresh inactives
+		lru_rotate_lists();
 
-		if (!(*pte & PTE_A) && (*pte & PTE_P))
-			// Page not accessed & is still present in memory. Make this the current victim
-			victim_entry = curr;
+		curr = lru_list.inactive_list;
 
-		curr = curr->next;
+		while (curr)
+		// This loop gets the last inactive entry that hasn't been accessed
+		{
+			pte = (pte_t*)curr->addr;
+
+			if (!(*pte & PTE_A) && (*pte & PTE_P))
+				// Page not accessed & is still present in memory. Make this the current victim
+				victim_entry = curr;
+
+			curr = curr->next;
+		}
+
+		if (victim_entry != NULL)
+		// No need for further attempts
+			break;
 	}
-
+	
 	if (victim_entry == NULL)
-	// Unlikely (especially after a list rotation) and there are more sophisticated ways to deal with this. May implement if this happens often
+	// Unlikely (especially after a couple list rotations) and there are more sophisticated ways to deal with this. May implement if this happens often
 		panic("No LRU inactive pages present in physical memory");
 	else
 	{

@@ -177,7 +177,6 @@ UPROGS=\
 	_wc\
 	_zombie\
 	_zeb_test\
-	_big\
 
 fs.img: mkfs README SWAPFILE $(UPROGS)
 	./mkfs fs.img README SWAPFILE $(UPROGS)
